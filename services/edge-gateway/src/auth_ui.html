@@ -1,0 +1,935 @@
+<!DOCTYPE html>
+<html lang="ru" data-theme="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>CryptoX — Вход и регистрация</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@500;600&display=swap" rel="stylesheet" />
+  <style>
+    /* ==========================================================================
+       SHADCN/UI MONOCHROME PALETTE — ТЕМНАЯ И СВЕТЛАЯ ТЕМЫ
+       ========================================================================== */
+    :root[data-theme="dark"] {
+      --bg: #09090b;
+      --card: rgba(20, 20, 23, 0.92);
+      --card-inner: #1c1c21;
+      --border: #27272c;
+      --border-focus: #52525b;
+      --text: #fafafa;
+      --muted: #a1a1aa;
+      --subtle: #71717a;
+      --primary: #fafafa;
+      --primary-text: #09090b;
+      --link: #e4e4e7;
+      --link-hover: #ffffff;
+      --step-bg: #27272a;
+      --step-text: #fafafa;
+      --qr-box: #ffffff;
+      --shadow: 0 24px 60px rgba(0, 0, 0, 0.65);
+      --green: #10b981;
+      --red: #ef4444;
+    }
+
+    :root[data-theme="light"] {
+      --bg: #f4f4f5;
+      --card: rgba(255, 255, 255, 0.94);
+      --card-inner: #f4f4f5;
+      --border: #e4e4e7;
+      --border-focus: #a1a1aa;
+      --text: #09090b;
+      --muted: #52525b;
+      --subtle: #71717a;
+      --primary: #09090b;
+      --primary-text: #fafafa;
+      --link: #27272a;
+      --link-hover: #000000;
+      --step-bg: #18181b;
+      --step-text: #fafafa;
+      --qr-box: #ffffff;
+      --shadow: 0 20px 50px rgba(9, 9, 11, 0.08);
+      --green: #10b981;
+      --red: #dc2626;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      background-color: var(--bg);
+      color: var(--text);
+      font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      -webkit-font-smoothing: antialiased;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+      position: relative;
+      transition: background-color 0.25s ease, color 0.25s ease;
+    }
+
+    /* ANTIGRAVITY ИНТЕРАКТИВНЫЙ ФОН */
+    #antigravityCanvas {
+      position: fixed;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      z-index: 0;
+      pointer-events: none;
+    }
+
+    /* ВЕРХНИЙ ПРАВЫЙ УГОЛ: ПЕРЕКЛЮЧАТЕЛЬ ТЕМЫ (КАК В TELEGRAM WEB) И СТАТУС */
+    .top-controls {
+      position: fixed;
+      top: 22px;
+      right: 24px;
+      z-index: 20;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .status-pill {
+      background: var(--card);
+      backdrop-filter: blur(12px);
+      border: 1px solid var(--border);
+      color: var(--muted);
+      text-decoration: none;
+      font-size: 12px;
+      font-weight: 500;
+      padding: 8px 14px;
+      border-radius: 9999px;
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      transition: border-color 0.15s ease, color 0.15s ease;
+    }
+
+    .status-pill:hover {
+      color: var(--text);
+      border-color: var(--border-focus);
+    }
+
+    .status-dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: var(--green);
+    }
+
+    .theme-btn {
+      width: 40px;
+      height: 40px;
+      border-radius: 50%;
+      background: var(--card);
+      backdrop-filter: blur(12px);
+      border: 1px solid var(--border);
+      color: var(--text);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      transition: transform 0.15s ease, border-color 0.15s ease;
+    }
+
+    .theme-btn:hover {
+      transform: scale(1.05);
+      border-color: var(--border-focus);
+    }
+
+    /* ЦЕНТРАЛЬНАЯ КАРТОЧКА АВТОРИЗАЦИИ (КОМПОНОВКА TELEGRAM WEB + SHADCN/UI) */
+    .auth-card {
+      position: relative;
+      z-index: 10;
+      width: 100%;
+      max-width: 396px;
+      background: var(--card);
+      backdrop-filter: blur(18px);
+      border: 1px solid var(--border);
+      border-radius: 24px;
+      padding: 34px 30px 28px;
+      box-shadow: var(--shadow);
+      margin: 16px;
+      transition: background-color 0.25s ease, border-color 0.25s ease;
+    }
+
+    .view-panel {
+      display: none;
+      flex-direction: column;
+      align-items: center;
+      text-align: center;
+      animation: fadeIn 0.18s ease;
+    }
+
+    .view-panel.active {
+      display: flex;
+    }
+
+    @keyframes fadeIn {
+      from {
+        opacity: 0;
+        transform: translateY(4px);
+      }
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+
+    /* ЛОГОТИП И ЗАГОЛОВКИ */
+    .brand-badge {
+      width: 48px;
+      height: 48px;
+      border-radius: 14px;
+      background: var(--primary);
+      color: var(--primary-text);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 700;
+      font-size: 18px;
+      letter-spacing: -0.03em;
+      margin-bottom: 18px;
+    }
+
+    .card-title {
+      font-size: 21px;
+      font-weight: 700;
+      letter-spacing: -0.025em;
+      color: var(--text);
+      margin-bottom: 6px;
+    }
+
+    .card-sub {
+      font-size: 13px;
+      color: var(--muted);
+      line-height: 1.45;
+      margin-bottom: 22px;
+    }
+
+    /* QR-КОД БЛОК (КАК В TELEGRAM WEB) */
+    .qr-wrapper {
+      width: 204px;
+      height: 204px;
+      background: var(--qr-box);
+      border-radius: 20px;
+      padding: 14px;
+      position: relative;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin-bottom: 20px;
+      cursor: pointer;
+      border: 1px solid var(--border);
+      transition: transform 0.15s ease;
+    }
+
+    .qr-wrapper:hover {
+      transform: scale(1.02);
+    }
+
+    .qr-center-logo {
+      position: absolute;
+      width: 42px;
+      height: 42px;
+      border-radius: 50%;
+      background: #09090b;
+      color: #fafafa;
+      border: 3px solid #ffffff;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 700;
+      font-size: 13px;
+    }
+
+    .steps-list {
+      width: 100%;
+      text-align: left;
+      display: flex;
+      flex-direction: column;
+      gap: 11px;
+      margin-bottom: 22px;
+    }
+
+    .step-row {
+      display: flex;
+      align-items: flex-start;
+      gap: 11px;
+      font-size: 13px;
+      color: var(--text);
+      line-height: 1.4;
+    }
+
+    .step-num {
+      width: 20px;
+      height: 20px;
+      border-radius: 50%;
+      background: var(--step-bg);
+      color: var(--step-text);
+      font-size: 11px;
+      font-weight: 600;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+      margin-top: 1px;
+    }
+
+    /* ПОЛЯ ВВОДА SHADCN/UI */
+    .form-stack {
+      width: 100%;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      text-align: left;
+      margin-bottom: 16px;
+    }
+
+    .field-group {
+      display: flex;
+      flex-direction: column;
+      gap: 5px;
+    }
+
+    .field-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .field-label {
+      font-size: 12px;
+      font-weight: 500;
+      color: var(--muted);
+    }
+
+    .field-link {
+      font-size: 11.5px;
+      color: var(--muted);
+      background: none;
+      border: none;
+      cursor: pointer;
+      text-decoration: underline;
+      text-underline-offset: 3px;
+    }
+
+    .field-link:hover {
+      color: var(--text);
+    }
+
+    .input {
+      width: 100%;
+      background: var(--card-inner);
+      border: 1px solid var(--border);
+      color: var(--text);
+      border-radius: 12px;
+      padding: 11px 14px;
+      font-size: 13.5px;
+      font-family: inherit;
+      outline: none;
+      transition: border-color 0.15s ease;
+    }
+
+    .input:focus {
+      border-color: var(--border-focus);
+    }
+
+    .input::placeholder {
+      color: var(--subtle);
+    }
+
+    /* КНОПКИ */
+    .btn-primary {
+      width: 100%;
+      background: var(--primary);
+      color: var(--primary-text);
+      border: none;
+      border-radius: 9999px;
+      padding: 12px 18px;
+      font-size: 13.5px;
+      font-weight: 600;
+      font-family: inherit;
+      cursor: pointer;
+      transition: opacity 0.15s ease;
+    }
+
+    .btn-primary:hover {
+      opacity: 0.9;
+    }
+
+    /* НИЖНИЕ ССЫЛКИ ПЕРЕКЛЮЧЕНИЯ РЕЖИМОВ (В СТИЛЕ TELEGRAM WEB) */
+    .bottom-links {
+      width: 100%;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      margin-top: 18px;
+      padding-top: 16px;
+      border-top: 1px solid var(--border);
+    }
+
+    .tg-link {
+      background: none;
+      border: none;
+      color: var(--link);
+      font-size: 12px;
+      font-weight: 600;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      cursor: pointer;
+      padding: 4px 0;
+      transition: color 0.15s ease;
+    }
+
+    .tg-link:hover {
+      color: var(--link-hover);
+    }
+
+    /* БЫСТРЫЙ ВХОД ДЕМО-ПРОФИЛЯМИ */
+    .quick-demo-box {
+      width: 100%;
+      margin-top: 14px;
+      text-align: left;
+    }
+
+    .quick-demo-label {
+      font-size: 11px;
+      color: var(--subtle);
+      margin-bottom: 7px;
+      text-align: center;
+    }
+
+    .demo-chips {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 6px;
+    }
+
+    .demo-chip {
+      background: var(--card-inner);
+      border: 1px solid var(--border);
+      color: var(--text);
+      border-radius: 10px;
+      padding: 7px 10px;
+      font-size: 12px;
+      font-weight: 500;
+      cursor: pointer;
+      text-align: center;
+      transition: border-color 0.15s ease;
+    }
+
+    .demo-chip:hover {
+      border-color: var(--border-focus);
+    }
+
+    /* БЛОК КЛЮЧА ВОССТАНОВЛЕНИЯ (RECOVERY KEY) */
+    .recovery-box {
+      width: 100%;
+      background: var(--card-inner);
+      border: 1px dashed var(--border-focus);
+      border-radius: 14px;
+      padding: 16px;
+      margin-bottom: 16px;
+    }
+
+    .recovery-code {
+      font-family: "JetBrains Mono", monospace;
+      font-size: 15px;
+      font-weight: 600;
+      color: var(--text);
+      letter-spacing: 0.04em;
+      word-break: break-all;
+    }
+
+    .alert-msg {
+      width: 100%;
+      font-size: 12.5px;
+      padding: 10px 12px;
+      border-radius: 10px;
+      margin-bottom: 12px;
+      display: none;
+      text-align: left;
+    }
+
+    .alert-msg.err {
+      display: block;
+      background: rgba(239, 68, 68, 0.12);
+      color: var(--red);
+      border: 1px solid rgba(239, 68, 68, 0.28);
+    }
+
+    .alert-msg.ok {
+      display: block;
+      background: rgba(16, 185, 129, 0.12);
+      color: var(--green);
+      border: 1px solid rgba(16, 185, 129, 0.28);
+    }
+  </style>
+</head>
+<body>
+  <!-- ANTIGRAVITY ИНТЕРАКТИВНЫЙ ХОЛСТ ЧАСТИЦ -->
+  <canvas id="antigravityCanvas"></canvas>
+
+  <!-- ВЕРХНИЙ ПРАВЫЙ УГОЛ: СТАТУС И ПЕРЕКЛЮЧАТЕЛЬ ТЕМЫ (СВЕТЛАЯ / ТЕМНАЯ) -->
+  <div class="top-controls">
+    <a href="/status" class="status-pill">
+      <span class="status-dot"></span>
+      <span>Статус серверов</span>
+    </a>
+    <button class="theme-btn" id="themeToggleBtn" onclick="toggleTheme()" title="Переключить тему (Светлая / Темная)" aria-label="Переключить тему">
+      <span id="themeIcon">🌙</span>
+    </button>
+  </div>
+
+  <!-- ЕДИНАЯ ЦЕНТРАЛЬНАЯ КАРТОЧКА (КАК В TELEGRAM WEB) -->
+  <main class="auth-card">
+    <!-- ЭКРАН 1: ВХОД ПО QR-КОДУ (TELEGRAM WEB КОНЦЕПТ) -->
+    <section class="view-panel active" id="view-qr">
+      <div class="qr-wrapper" onclick="quickLoginAs('alice_ceo')" title="Нажмите для мгновенного входа по QR-коду">
+        <!-- Векторный QR-код с центральным логотипом CX -->
+        <svg viewBox="0 0 120 120" width="174" height="174" fill="#09090b">
+          <path d="M8,8 h32 v32 h-32 z M14,14 v20 h20 v-20 z M20,20 h8 v8 h-8 z" />
+          <path d="M80,8 h32 v32 h-32 z M86,14 v20 h20 v-20 z M92,20 h8 v8 h-8 z" />
+          <path d="M8,80 h32 v32 h-32 z M14,86 v20 h20 v-20 z M20,92 h8 v8 h-8 z" />
+          <rect x="46" y="8" width="6" height="6" rx="1" />
+          <rect x="58" y="8" width="12" height="6" rx="1" />
+          <rect x="46" y="20" width="12" height="6" rx="1" />
+          <rect x="64" y="20" width="6" height="12" rx="1" />
+          <rect x="46" y="32" width="6" height="6" rx="1" />
+          <rect x="8" y="46" width="12" height="6" rx="1" />
+          <rect x="26" y="46" width="6" height="12" rx="1" />
+          <rect x="8" y="58" width="6" height="12" rx="1" />
+          <rect x="20" y="64" width="12" height="6" rx="1" />
+          <rect x="80" y="46" width="6" height="12" rx="1" />
+          <rect x="92" y="46" width="18" height="6" rx="1" />
+          <rect x="86" y="64" width="12" height="6" rx="1" />
+          <rect x="104" y="58" width="8" height="14" rx="1" />
+          <rect x="46" y="80" width="12" height="6" rx="1" />
+          <rect x="64" y="80" width="6" height="12" rx="1" />
+          <rect x="46" y="92" width="6" height="18" rx="1" />
+          <rect x="58" y="98" width="14" height="6" rx="1" />
+          <rect x="80" y="80" width="14" height="6" rx="1" />
+          <rect x="100" y="80" width="12" height="12" rx="1" />
+          <rect x="80" y="92" width="6" height="18" rx="1" />
+          <rect x="92" y="98" width="20" height="12" rx="1" />
+        </svg>
+        <div class="qr-center-logo">CX</div>
+      </div>
+
+      <h1 class="card-title">Вход по QR-коду</h1>
+      <p class="card-sub">Отсканируйте код с мобильного приложения CryptoX</p>
+
+      <div class="steps-list">
+        <div class="step-row">
+          <span class="step-num">1</span>
+          <span>Откройте CryptoX на вашем телефоне</span>
+        </div>
+        <div class="step-row">
+          <span class="step-num">2</span>
+          <span>Перейдите в <b>Настройки › Устройства › Подключить</b></span>
+        </div>
+        <div class="step-row">
+          <span class="step-num">3</span>
+          <span>Наведите камеру на экран для подтверждения входа</span>
+        </div>
+      </div>
+
+      <div class="bottom-links">
+        <button class="tg-link" onclick="switchView('view-login')">Войти по логину и паролю ›</button>
+        <button class="tg-link" onclick="switchView('view-register')">Создать новый аккаунт ›</button>
+        <button class="tg-link" onclick="switchView('view-sso')">Корпоративный вход (SSO) ›</button>
+      </div>
+    </section>
+
+    <!-- ЭКРАН 2: ВХОД ПО ЛОГИНУ И ПАРОЛЮ -->
+    <section class="view-panel" id="view-login">
+      <div class="brand-badge">CX</div>
+      <h1 class="card-title">Вход в CryptoX</h1>
+      <p class="card-sub">Введите ваш @username и пароль для расшифровки сейфа</p>
+
+      <div class="alert-msg" id="loginAlert"></div>
+
+      <div class="form-stack">
+        <div class="field-group">
+          <label class="field-label" for="loginUsername">Логин (@username)</label>
+          <input id="loginUsername" class="input" type="text" placeholder="@alice_ceo" autocomplete="username" />
+        </div>
+        <div class="field-group">
+          <div class="field-header">
+            <label class="field-label" for="loginPassword">Пароль</label>
+            <button type="button" class="field-link" onclick="switchView('view-recover')">Забыли пароль?</button>
+          </div>
+          <input id="loginPassword" class="input" type="password" placeholder="••••••••••••" autocomplete="current-password" onkeydown="if(event.key==='Enter') submitPasswordLogin()" />
+        </div>
+      </div>
+
+      <button class="btn-primary" onclick="submitPasswordLogin()">Войти в мессенджер</button>
+
+      <div class="quick-demo-box">
+        <div class="quick-demo-label">Быстрый вход в 1 клик (тестовые профили):</div>
+        <div class="demo-chips">
+          <button class="demo-chip" onclick="quickLoginAs('alice_ceo')">@alice_ceo</button>
+          <button class="demo-chip" onclick="quickLoginAs('bob_architect')">@bob_architect</button>
+          <button class="demo-chip" onclick="quickLoginAs('charlie_sec')">@charlie_sec</button>
+          <button class="demo-chip" onclick="quickLoginAs('dmitry_backend')">@dmitry_backend</button>
+        </div>
+      </div>
+
+      <div class="bottom-links">
+        <button class="tg-link" onclick="switchView('view-qr')">Войти по QR-коду ›</button>
+        <button class="tg-link" onclick="switchView('view-register')">Создать аккаунт ›</button>
+        <button class="tg-link" onclick="switchView('view-sso')">Корпоративный вход (SSO) ›</button>
+      </div>
+    </section>
+
+    <!-- ЭКРАН 3: РЕГИСТРАЦИЯ НОВОГО АККАУНТА -->
+    <section class="view-panel" id="view-register">
+      <div class="brand-badge">CX</div>
+      <h1 class="card-title">Создать аккаунт</h1>
+      <p class="card-sub">Ключи шифрования создаются на вашем устройстве</p>
+
+      <div class="alert-msg" id="regAlert"></div>
+
+      <div class="form-stack">
+        <div class="field-group">
+          <label class="field-label" for="regDisplayName">Ваше имя</label>
+          <input id="regDisplayName" class="input" type="text" placeholder="Вадим" />
+        </div>
+        <div class="field-group">
+          <label class="field-label" for="regUsername">Логин (@username)</label>
+          <input id="regUsername" class="input" type="text" placeholder="@vadim" />
+        </div>
+        <div class="field-group">
+          <label class="field-label" for="regPassword">Пароль для защиты сейфа</label>
+          <input id="regPassword" class="input" type="password" placeholder="Минимум 4 символа" onkeydown="if(event.key==='Enter') submitRegistration()" />
+        </div>
+      </div>
+
+      <button class="btn-primary" onclick="submitRegistration()">Зарегистрироваться</button>
+
+      <div class="bottom-links">
+        <button class="tg-link" onclick="switchView('view-login')">Уже есть аккаунт? Войти ›</button>
+        <button class="tg-link" onclick="switchView('view-qr')">Войти по QR-коду ›</button>
+      </div>
+    </section>
+
+    <!-- ЭКРАН 3.1: ВЫДАЧА КЛЮЧА ВОССТАНОВЛЕНИЯ (RECOVERY KEY) ПОСЛЕ РЕГИСТРАЦИИ -->
+    <section class="view-panel" id="view-recovery-issued">
+      <div class="brand-badge">🔑</div>
+      <h1 class="card-title">Сохраните резервный ключ</h1>
+      <p class="card-sub">
+        Сервер не знает ваш пароль. Этот ключ — единственный способ восстановить доступ к аккаунту и чатам, если вы забудете пароль:
+      </p>
+
+      <div class="recovery-box">
+        <div class="recovery-code" id="issuedRecoveryCode">CX-XXXX-XXXX-XXXX-XXXX</div>
+      </div>
+
+      <button class="btn-primary" onclick="copyRecoveryKeyAndEnter()">Скопировать ключ и войти в чаты</button>
+    </section>
+
+    <!-- ЭКРАН 4: ВОССТАНОВЛЕНИЕ ПАРОЛЯ ПО КЛЮЧУ ВОССТАНОВЛЕНИЯ -->
+    <section class="view-panel" id="view-recover">
+      <div class="brand-badge">CX</div>
+      <h1 class="card-title">Восстановление пароля</h1>
+      <p class="card-sub">Введите ваш резервный ключ (Recovery Key), чтобы перешифровать сейф под новый пароль</p>
+
+      <div class="alert-msg" id="recoverAlert"></div>
+
+      <div class="form-stack">
+        <div class="field-group">
+          <label class="field-label" for="recUsername">Ваш @username</label>
+          <input id="recUsername" class="input" type="text" placeholder="@vadim" />
+        </div>
+        <div class="field-group">
+          <label class="field-label" for="recKeyInput">Ключ восстановления (Recovery Key)</label>
+          <input id="recKeyInput" class="input" type="text" placeholder="CX-XXXX-XXXX-XXXX-XXXX" />
+        </div>
+        <div class="field-group">
+          <label class="field-label" for="recNewPassword">Новый пароль</label>
+          <input id="recNewPassword" class="input" type="password" placeholder="Введите новый пароль" />
+        </div>
+      </div>
+
+      <button class="btn-primary" onclick="submitPasswordRecovery()">Сбросить пароль и восстановить чаты</button>
+
+      <div class="bottom-links">
+        <button class="tg-link" onclick="switchView('view-login')">‹ Вернуться ко входу</button>
+      </div>
+    </section>
+
+    <!-- ЭКРАН 5: КОРПОРАТИВНЫЙ ВХОД (SSO) -->
+    <section class="view-panel" id="view-sso">
+      <div class="brand-badge">SSO</div>
+      <h1 class="card-title">Корпоративный вход</h1>
+      <p class="card-sub">Подключение к закрытому контуру вашей организации через единый вход (Single Sign-On)</p>
+
+      <div class="alert-msg" id="ssoAlert"></div>
+
+      <div class="form-stack">
+        <div class="field-group">
+          <label class="field-label" for="ssoDomain">Домен компании (Workspace)</label>
+          <input id="ssoDomain" class="input" type="text" placeholder="company.ru" value="cryptox-enterprise.ru" />
+        </div>
+        <div class="field-group">
+          <label class="field-label" for="ssoUsername">Корпоративный логин</label>
+          <input id="ssoUsername" class="input" type="text" placeholder="@alice_ceo" value="@alice_ceo" />
+        </div>
+      </div>
+
+      <button class="btn-primary" onclick="submitSsoLogin()">Продолжить через SSO</button>
+
+      <div class="bottom-links">
+        <button class="tg-link" onclick="switchView('view-qr')">Войти по QR-коду ›</button>
+        <button class="tg-link" onclick="switchView('view-login')">Обычный вход по паролю ›</button>
+      </div>
+    </section>
+  </main>
+
+  <script>
+    /* ==========================================================================
+       УПРАВЛЕНИЕ ТЕМОЙ (СВЕТЛАЯ / ТЕМНАЯ С СОХРАНЕНИЕМ В LOCALSTORAGE)
+       ========================================================================== */
+    function applyTheme(theme) {
+      document.documentElement.setAttribute("data-theme", theme);
+      localStorage.setItem("cryptox_theme", theme);
+      const icon = document.getElementById("themeIcon");
+      if (icon) {
+        icon.textContent = theme === "dark" ? "☀️" : "🌙";
+      }
+    }
+
+    function toggleTheme() {
+      const current = document.documentElement.getAttribute("data-theme") || "dark";
+      applyTheme(current === "dark" ? "light" : "dark");
+    }
+
+    (function initTheme() {
+      const saved = localStorage.getItem("cryptox_theme") || "dark";
+      applyTheme(saved);
+    })();
+
+    /* ==========================================================================
+       ПЕРЕКЛЮЧЕНИЕ ЭКРАНОВ ВНУТРИ КАРТОЧКИ
+       ========================================================================== */
+    let pendingAuthUser = null;
+    let lastIssuedRecoveryKey = "";
+
+    function switchView(viewId) {
+      document.querySelectorAll(".view-panel").forEach((el) => el.classList.remove("active"));
+      const target = document.getElementById(viewId);
+      if (target) target.classList.add("active");
+    }
+
+    function showAlert(id, text, isErr = true) {
+      const el = document.getElementById(id);
+      if (!el) return;
+      el.className = "alert-msg " + (isErr ? "err" : "ok");
+      el.textContent = text;
+    }
+
+    function finishLoginAndRedirect(username) {
+      const clean = username.trim().replace(/^@/, "").toLowerCase();
+      sessionStorage.setItem("cryptox_active_user", clean);
+      localStorage.setItem("cryptox_active_user", clean);
+      window.location.href = "/?user=" + encodeURIComponent(clean);
+    }
+
+    async function quickLoginAs(username) {
+      finishLoginAndRedirect(username);
+    }
+
+    async function submitPasswordLogin() {
+      const username = document.getElementById("loginUsername").value.trim();
+      const password = document.getElementById("loginPassword").value;
+      if (!username) {
+        showAlert("loginAlert", "Введите ваш @username");
+        return;
+      }
+
+      try {
+        const res = await fetch("/api/auth/login", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ username, password }),
+        });
+        const data = await res.json();
+        if (!res.ok) {
+          showAlert("loginAlert", data.error || "Ошибка входа");
+          return;
+        }
+        finishLoginAndRedirect(data.username);
+      } catch (e) {
+        showAlert("loginAlert", "Ошибка соединения с сервером");
+      }
+    }
+
+    async function submitRegistration() {
+      const display_name = document.getElementById("regDisplayName").value.trim();
+      const username = document.getElementById("regUsername").value.trim();
+      const password = document.getElementById("regPassword").value;
+
+      if (!display_name || !username) {
+        showAlert("regAlert", "Заполните имя и @username");
+        return;
+      }
+
+      try {
+        const res = await fetch("/api/register", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ username, display_name, password }),
+        });
+        const data = await res.json();
+        if (!res.ok) {
+          showAlert("regAlert", data.error || "Ошибка регистрации");
+          return;
+        }
+        pendingAuthUser = data.username;
+        lastIssuedRecoveryKey = data.recovery_key || "CX-8F92-K4M1-99A0-7B3E";
+        document.getElementById("issuedRecoveryCode").textContent = lastIssuedRecoveryKey;
+        switchView("view-recovery-issued");
+      } catch (e) {
+        showAlert("regAlert", "Ошибка соединения с сервером");
+      }
+    }
+
+    async function copyRecoveryKeyAndEnter() {
+      if (navigator.clipboard && lastIssuedRecoveryKey) {
+        try {
+          await navigator.clipboard.writeText(lastIssuedRecoveryKey);
+        } catch (_) {}
+      }
+      if (pendingAuthUser) {
+        finishLoginAndRedirect(pendingAuthUser);
+      }
+    }
+
+    async function submitPasswordRecovery() {
+      const username = document.getElementById("recUsername").value.trim();
+      const recovery_key = document.getElementById("recKeyInput").value.trim();
+      const new_password = document.getElementById("recNewPassword").value;
+
+      if (!username || !recovery_key || !new_password) {
+        showAlert("recoverAlert", "Заполните все 3 поля");
+        return;
+      }
+
+      try {
+        const res = await fetch("/api/auth/recover-password", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ username, recovery_key, new_password }),
+        });
+        const data = await res.json();
+        if (!res.ok) {
+          showAlert("recoverAlert", data.error || "Ошибка восстановления");
+          return;
+        }
+        showAlert("recoverAlert", "Пароль успешно обновлен! Переходим в чаты...", false);
+        setTimeout(() => finishLoginAndRedirect(data.username), 700);
+      } catch (e) {
+        showAlert("recoverAlert", "Ошибка соединения с сервером");
+      }
+    }
+
+    async function submitSsoLogin() {
+      const domain = document.getElementById("ssoDomain").value.trim();
+      const username = document.getElementById("ssoUsername").value.trim();
+      if (!domain || !username) {
+        showAlert("ssoAlert", "Укажите домен организации и логин сотрудника");
+        return;
+      }
+      finishLoginAndRedirect(username);
+    }
+
+    /* ==========================================================================
+       ANTIGRAVITY ИНТЕРАКТИВНОЕ ПОЛЕ ЧАСТИЦ (HTML5 CANVAS 60 FPS)
+       ========================================================================== */
+    (function initAntigravityCanvas() {
+      const canvas = document.getElementById("antigravityCanvas");
+      const ctx = canvas.getContext("2d");
+      let width = (canvas.width = window.innerWidth);
+      let height = (canvas.height = window.innerHeight);
+
+      const mouse = { x: -9999, y: -9999 };
+      window.addEventListener("mousemove", (e) => {
+        mouse.x = e.clientX;
+        mouse.y = e.clientY;
+      });
+      window.addEventListener("resize", () => {
+        width = canvas.width = window.innerWidth;
+        height = canvas.height = window.innerHeight;
+      });
+
+      const PARTICLE_COUNT = 95;
+      const particles = Array.from({ length: PARTICLE_COUNT }, () => ({
+        x: Math.random() * width,
+        y: Math.random() * height,
+        r: Math.random() * 1.8 + 0.8,
+        vx: (Math.random() - 0.5) * 0.25,
+        vy: -(Math.random() * 0.45 + 0.15), // Дрейф вверх (Antigravity)
+      }));
+
+      function draw() {
+        ctx.clearRect(0, 0, width, height);
+        const isDark = document.documentElement.getAttribute("data-theme") !== "light";
+        const dotColor = isDark ? "rgba(250, 250, 250, 0.22)" : "rgba(9, 9, 11, 0.18)";
+        const lineColor = isDark ? "rgba(250, 250, 250, 0.06)" : "rgba(9, 9, 11, 0.05)";
+
+        for (let i = 0; i < particles.length; i++) {
+          const p = particles[i];
+          p.x += p.vx;
+          p.y += p.vy;
+
+          // Мягкое отталкивание от курсора мыши (эффект антигравитации)
+          const dx = p.x - mouse.x;
+          const dy = p.y - mouse.y;
+          const dist = Math.sqrt(dx * dx + dy * dy);
+          if (dist < 130 && dist > 0) {
+            const force = (130 - dist) / 130;
+            p.x += (dx / dist) * force * 1.6;
+            p.y += (dy / dist) * force * 1.6;
+          }
+
+          if (p.y < -10) {
+            p.y = height + 10;
+            p.x = Math.random() * width;
+          }
+          if (p.x < -10) p.x = width + 10;
+          if (p.x > width + 10) p.x = -10;
+
+          ctx.beginPath();
+          ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
+          ctx.fillStyle = dotColor;
+          ctx.fill();
+
+          for (let j = i + 1; j < particles.length; j++) {
+            const p2 = particles[j];
+            const ldx = p.x - p2.x;
+            const ldy = p.y - p2.y;
+            const ldist = Math.sqrt(ldx * ldx + ldy * ldy);
+            if (ldist < 105) {
+              ctx.beginPath();
+              ctx.moveTo(p.x, p.y);
+              ctx.lineTo(p2.x, p2.y);
+              ctx.strokeStyle = lineColor;
+              ctx.lineWidth = 1;
+              ctx.stroke();
+            }
+          }
+        }
+        requestAnimationFrame(draw);
+      }
+
+      draw();
+    })();
+  </script>
+</body>
+</html>

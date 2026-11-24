@@ -638,6 +638,54 @@ impl AuthVaultService {
             .ok_or(AuthVaultError::UserNotFound)?;
         Ok((acc.username.clone(), acc.public_key_bundle.clone()))
     }
+
+    /// Ротация публичного ключа аутентификации `auth_verifying_key` и перешифрованного сейфа `EncryptedVaultBlob`
+    /// после успешного Zero-Knowledge восстановления доступа через резервный `Recovery Key`.
+    pub fn rotate_password_and_vault(
+        &self,
+        tenant_id: TenantId,
+        username: &str,
+        new_auth_verifying_key: &[u8],
+        new_vault_blob: EncryptedVaultBlob,
+    ) -> Result<u64, AuthVaultError> {
+        self.check_available()?;
+        let norm = Self::validate_username(username.trim().trim_start_matches('@'))?;
+        let user_id = *self
+            .username_index
+            .get(&(tenant_id, norm))
+            .ok_or(AuthVaultError::UserNotFound)?;
+
+        let vk_bytes: [u8; 32] = new_auth_verifying_key
+            .try_into()
+            .map_err(|_| AuthVaultError::InvalidCredentials)?;
+        let verifying_key =
+            VerifyingKey::from_bytes(&vk_bytes).map_err(|_| AuthVaultError::InvalidCredentials)?;
+
+        let mut account = self
+            .accounts_by_id
+            .get_mut(&(tenant_id, user_id))
+            .ok_or(AuthVaultError::UserNotFound)?;
+
+        let current_version = account.vault_blob.vault_version;
+        if new_vault_blob.vault_version != current_version.saturating_add(1) {
+            return Err(AuthVaultError::VaultVersionRollback {
+                current: current_version,
+                attempted: new_vault_blob.vault_version,
+            });
+        }
+
+        let updated_version = new_vault_blob.vault_version;
+        account.auth_verifying_key = verifying_key;
+        account.auth_argon2_salt.clone_from(&new_vault_blob.argon2_salt);
+        account.auth_m_cost_kib = new_vault_blob.argon2_m_cost_kib;
+        account.auth_t_cost = new_vault_blob.argon2_t_cost;
+        account.auth_p_cost = new_vault_blob.argon2_p_cost;
+        account.vault_blob = new_vault_blob;
+        drop(account);
+
+        self.brute_force_tracker.remove(&(tenant_id, user_id));
+        Ok(updated_version)
+    }
 }
 
 impl Default for AuthVaultService {

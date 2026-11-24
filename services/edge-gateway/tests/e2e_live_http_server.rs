@@ -88,6 +88,10 @@ async fn test_live_axum_server_e2e_ws_disk_search_chat_cloud_sync_and_chaos() {
     assert!(status_html.contains("HTTP/1.1 200 OK"));
     assert!(status_html.contains("Статус сервисов"));
 
+    let auth_html = raw_http_request(addr, "GET", "/auth", None).await;
+    assert!(auth_html.contains("HTTP/1.1 200 OK"));
+    assert!(auth_html.contains("Вход по QR-коду"));
+
     let status_json = raw_http_request(addr, "GET", "/api/status/overview", None).await;
     assert!(status_json.contains("HTTP/1.1 200 OK"));
     assert!(status_json.contains("\"overall_status\":\"OPERATIONAL\""));

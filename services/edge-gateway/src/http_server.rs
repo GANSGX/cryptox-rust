@@ -18,12 +18,13 @@ use cryptox_core::{
     Argon2Profile, ChatSession, CloudKeyVault, UserIdentity, XChaCha20Poly1305Provider,
 };
 use cryptox_proto::{
-    ChannelId, CipherSuiteId, DeviceId, DirectoryEntryProto, EncryptionPolicy, MessageId,
-    PublicKeyBundle, ReadReceiptWatermarkProto, RegisterUserRequest, SignedSessionToken, TenantId,
-    UserId,
+    ChannelId, CipherSuiteId, DeviceId, DirectoryEntryProto, EncryptedVaultBlob, EncryptionPolicy,
+    MessageId, PublicKeyBundle, ReadReceiptWatermarkProto, RegisterUserRequest, SignedSessionToken,
+    TenantId, UserId,
 };
 use cryptox_storage::EncryptedStorageEngine;
 use dashmap::DashMap;
+use rand_core::{OsRng, RngCore};
 use serde::{Deserialize, Serialize};
 use std::{
     path::Path,
@@ -38,8 +39,24 @@ use user_directory_svc::UserDirectoryService;
 
 const UI_HTML: &str = include_str!("ui.html");
 const STATUS_UI_HTML: &str = include_str!("status_ui.html");
+const AUTH_UI_HTML: &str = include_str!("auth_ui.html");
 const DEMO_PASSWORD: &[u8] = b"CryptoX#Enterprise#2026";
 const DEFAULT_STORAGE_ROOT_KEY: [u8; 32] = [0x6A_u8; 32];
+
+fn generate_recovery_key() -> String {
+    const CHARSET: &[u8; 32] = b"23456789ABCDEFGHJKLMNPQRSTUVWXYZ";
+    let mut rnd = [0u8; 16];
+    OsRng.fill_bytes(&mut rnd);
+    let mut segs = Vec::with_capacity(4);
+    for chunk in rnd.chunks(4) {
+        let mut s = String::with_capacity(4);
+        for &b in chunk {
+            s.push(CHARSET[(b as usize) % CHARSET.len()] as char);
+        }
+        segs.push(s);
+    }
+    format!("CX-{}-{}-{}-{}", segs[0], segs[1], segs[2], segs[3])
+}
 
 /// Локальный клиентский крипто-анклав сотрудника (имитирует память Rust-ядра на устройстве в Tauri v2).
 pub struct ClientDeviceEnclave {
@@ -49,6 +66,8 @@ pub struct ClientDeviceEnclave {
     pub active_token: SignedSessionToken,
     pub device_number: u32,
     pub vault_version: AtomicU64,
+    pub recovery_key: String,
+    pub recovery_vault_blob: EncryptedVaultBlob,
     /// Кэш установленных E2EE сессий чатов `peer_username -> ChatSession`.
     pub sessions: DashMap<String, ChatSession>,
     /// Кэш проверенных публичных ключей собеседников `peer_username -> PublicKeyBundle`.
@@ -141,11 +160,27 @@ impl LivePrototypeState {
         raw_username: &str,
         display_name: &str,
     ) -> Result<String, String> {
+        let (uname, _rec) =
+            self.onboard_employee_enclave_with_password(raw_username, display_name, DEMO_PASSWORD)?;
+        Ok(uname)
+    }
+
+    pub fn onboard_employee_enclave_with_password(
+        &self,
+        raw_username: &str,
+        display_name: &str,
+        password_bytes: &[u8],
+    ) -> Result<(String, String), String> {
         let now_ms = Self::now_ms();
         let norm_uname = raw_username
             .trim()
             .trim_start_matches('@')
             .to_ascii_lowercase();
+        let effective_pwd = if password_bytes.is_empty() {
+            DEMO_PASSWORD
+        } else {
+            password_bytes
+        };
 
         let user_id = UserId::new_v7();
         let device_id = DeviceId::new_v7();
@@ -164,14 +199,25 @@ impl LivePrototypeState {
         let vault_blob = CloudKeyVault::seal_to_cloud_blob(
             &identity,
             &[],
-            DEMO_PASSWORD,
+            effective_pwd,
             1,
             profile,
         )
         .map_err(|e| e.to_string())?;
         let auth_vk = CloudKeyVault::derive_auth_verifying_key(
-            DEMO_PASSWORD,
+            effective_pwd,
             &vault_blob.argon2_salt,
+            profile,
+        )
+        .map_err(|e| e.to_string())?;
+
+        // Генерируем резервный Ключ Восстановления (`Recovery Key`) и запечатываем им резервную копию сейфа
+        let recovery_key = generate_recovery_key();
+        let recovery_vault_blob = CloudKeyVault::seal_to_cloud_blob(
+            &identity,
+            &[],
+            recovery_key.as_bytes(),
+            1,
             profile,
         )
         .map_err(|e| e.to_string())?;
@@ -193,7 +239,7 @@ impl LivePrototypeState {
             .auth_service()
             .issue_login_challenge(self.tenant_id, &norm_uname, now_ms)
             .map_err(|e| e.to_string())?;
-        let verify_req = CloudKeyVault::sign_login_challenge(&ch, DEMO_PASSWORD, device_id)
+        let verify_req = CloudKeyVault::sign_login_challenge(&ch, effective_pwd, device_id)
             .map_err(|e| e.to_string())?;
         let (token, _) = self
             .gateway
@@ -222,6 +268,8 @@ impl LivePrototypeState {
                 active_token: token,
                 device_number: 1,
                 vault_version: AtomicU64::new(1),
+                recovery_key: recovery_key.clone(),
+                recovery_vault_blob,
                 sessions: DashMap::new(),
                 peer_bundles: DashMap::new(),
             }),
@@ -235,13 +283,14 @@ impl LivePrototypeState {
             .to_string(),
         );
 
-        Ok(norm_uname)
+        Ok((norm_uname, recovery_key))
     }
 }
 
 pub fn build_app_router(state: Arc<LivePrototypeState>) -> Router {
     Router::new()
         .route("/", get(serve_ui))
+        .route("/auth", get(serve_auth_ui))
         .route("/status", get(serve_status_ui))
         .route("/ws", get(ws_upgrade_handler))
         .route("/healthz", get(api_healthz))
@@ -255,6 +304,8 @@ pub fn build_app_router(state: Arc<LivePrototypeState>) -> Router {
         )
         .route("/api/state", get(api_get_state))
         .route("/api/register", post(api_register_user))
+        .route("/api/auth/login", post(api_auth_login))
+        .route("/api/auth/recover-password", post(api_auth_recover_password))
         .route("/api/cloud-sync-new-device", post(api_cloud_sync_new_device))
         .route("/api/search", get(api_search_users))
         .route("/api/chat/send", post(api_send_message))
@@ -262,6 +313,10 @@ pub fn build_app_router(state: Arc<LivePrototypeState>) -> Router {
         .route("/api/chat/mark-read", post(api_mark_chat_read))
         .route("/api/chaos/toggle", post(api_chaos_toggle))
         .with_state(state)
+}
+
+async fn serve_auth_ui() -> Html<&'static str> {
+    Html(AUTH_UI_HTML)
 }
 
 async fn serve_status_ui() -> Html<&'static str> {
@@ -442,22 +497,207 @@ async fn api_get_state(State(state): State<Arc<LivePrototypeState>>) -> Json<Sta
 pub struct RegisterReqDto {
     pub username: String,
     pub display_name: String,
+    #[serde(default)]
+    pub password: String,
 }
 
 async fn api_register_user(
     State(state): State<Arc<LivePrototypeState>>,
     Json(req): Json<RegisterReqDto>,
 ) -> impl IntoResponse {
-    match state.onboard_employee_enclave(&req.username, &req.display_name) {
-        Ok(uname) => (
+    match state.onboard_employee_enclave_with_password(
+        &req.username,
+        &req.display_name,
+        req.password.as_bytes(),
+    ) {
+        Ok((uname, recovery_key)) => (
             StatusCode::CREATED,
-            Json(serde_json::json!({ "username": uname })),
+            Json(serde_json::json!({
+                "username": uname,
+                "display_name": req.display_name,
+                "recovery_key": recovery_key,
+            })),
         ),
         Err(e) => (
             StatusCode::BAD_REQUEST,
             Json(serde_json::json!({ "error": e })),
         ),
     }
+}
+
+#[derive(Deserialize)]
+pub struct AuthLoginReqDto {
+    pub username: String,
+    #[serde(default)]
+    pub password: String,
+}
+
+async fn api_auth_login(
+    State(state): State<Arc<LivePrototypeState>>,
+    Json(req): Json<AuthLoginReqDto>,
+) -> impl IntoResponse {
+    let now_ms = LivePrototypeState::now_ms();
+    let norm = req.username.trim().trim_start_matches('@').to_ascii_lowercase();
+
+    let Some(enclave_ref) = state.client_enclaves.get(&norm) else {
+        return (
+            StatusCode::NOT_FOUND,
+            Json(serde_json::json!({ "error": "Аккаунт с таким @username не найден" })),
+        );
+    };
+    let display_name = enclave_ref.display_name.clone();
+    let recovery_key = enclave_ref.recovery_key.clone();
+    drop(enclave_ref);
+
+    let effective_pwd = if req.password.trim().is_empty() {
+        DEMO_PASSWORD
+    } else {
+        req.password.as_bytes()
+    };
+
+    let ch = match state
+        .gateway
+        .auth_service()
+        .issue_login_challenge(state.tenant_id, &norm, now_ms)
+    {
+        Ok(c) => c,
+        Err(e) => {
+            return (
+                StatusCode::UNAUTHORIZED,
+                Json(serde_json::json!({ "error": e.to_string() })),
+            );
+        }
+    };
+
+    let device_id = DeviceId::new_v7();
+    let Ok(verify_req) = CloudKeyVault::sign_login_challenge(&ch, effective_pwd, device_id) else {
+        return (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({ "error": "Ошибка крипто-подписи вызова входа" })),
+        );
+    };
+
+    match state
+        .gateway
+        .auth_service()
+        .verify_login_and_fetch_vault(&verify_req, now_ms + 1)
+    {
+        Ok((_tok, _vault)) => (
+            StatusCode::OK,
+            Json(serde_json::json!({
+                "username": norm,
+                "display_name": display_name,
+                "recovery_key": recovery_key,
+            })),
+        ),
+        Err(e) => (
+            StatusCode::UNAUTHORIZED,
+            Json(serde_json::json!({ "error": format!("Неверный пароль или аккаунт заблокирован: {e}") })),
+        ),
+    }
+}
+
+#[derive(Deserialize)]
+pub struct AuthRecoverPasswordReqDto {
+    pub username: String,
+    pub recovery_key: String,
+    pub new_password: String,
+}
+
+async fn api_auth_recover_password(
+    State(state): State<Arc<LivePrototypeState>>,
+    Json(req): Json<AuthRecoverPasswordReqDto>,
+) -> impl IntoResponse {
+    let norm = req.username.trim().trim_start_matches('@').to_ascii_lowercase();
+    let clean_rec = req.recovery_key.trim().to_ascii_uppercase();
+    if req.new_password.trim().len() < 4 {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({ "error": "Новый пароль должен содержать минимум 4 символа" })),
+        );
+    }
+
+    let Some(old_ref) = state.client_enclaves.get(&norm) else {
+        return (
+            StatusCode::NOT_FOUND,
+            Json(serde_json::json!({ "error": "Аккаунт с таким @username не найден" })),
+        );
+    };
+    let old_enclave = Arc::clone(old_ref.value());
+    drop(old_ref);
+
+    // Zero-Knowledge проверка Ключа Восстановления: пытаемся расшифровать резервный сейф `recovery_vault_blob`!
+    let new_device_id = DeviceId::new_v7();
+    let Ok((recovered_identity, _)) = CloudKeyVault::unlock_from_cloud_blob(
+        &old_enclave.recovery_vault_blob,
+        clean_rec.as_bytes(),
+        new_device_id,
+        EncryptionPolicy::StrictZeroKnowledge,
+        None,
+    ) else {
+        return (
+            StatusCode::UNAUTHORIZED,
+            Json(serde_json::json!({
+                "error": "Неверный ключ восстановления (не удалось расшифровать резервный крипто-сейф)"
+            })),
+        );
+    };
+
+    let next_ver = old_enclave
+        .vault_version
+        .load(Ordering::SeqCst)
+        .saturating_add(1);
+    let profile = LivePrototypeState::fast_argon_profile();
+
+    let Ok(new_vault_blob) = CloudKeyVault::seal_to_cloud_blob(
+        &recovered_identity,
+        &[],
+        req.new_password.as_bytes(),
+        next_ver,
+        profile,
+    ) else {
+        return (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({ "error": "Ошибка перешифрования сейфа" })),
+        );
+    };
+
+    let Ok(new_auth_vk) = CloudKeyVault::derive_auth_verifying_key(
+        req.new_password.as_bytes(),
+        &new_vault_blob.argon2_salt,
+        profile,
+    ) else {
+        return (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({ "error": "Ошибка генерации нового ключа входа" })),
+        );
+    };
+
+    if let Err(e) = state.gateway.auth_service().rotate_password_and_vault(
+        state.tenant_id,
+        &norm,
+        &new_auth_vk,
+        new_vault_blob.clone(),
+    ) {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({ "error": e.to_string() })),
+        );
+    }
+
+    if let Some(storage) = &state.disk_storage {
+        let _ = storage.put_vault_blob(&new_vault_blob);
+    }
+    old_enclave.vault_version.store(next_ver, Ordering::SeqCst);
+
+    (
+        StatusCode::OK,
+        Json(serde_json::json!({
+            "username": norm,
+            "vault_version": next_ver,
+            "message": "Пароль успешно сброшен, облачный сейф перешифрован без потери чатов!"
+        })),
+    )
 }
 
 #[derive(Deserialize)]
@@ -552,6 +792,8 @@ async fn api_cloud_sync_new_device(
         active_token: new_token,
         device_number: new_device_number,
         vault_version: AtomicU64::new(vault_blob.vault_version),
+        recovery_key: old_enclave.recovery_key.clone(),
+        recovery_vault_blob: old_enclave.recovery_vault_blob.clone(),
         sessions: new_sessions_map,
         peer_bundles: old_enclave.peer_bundles.clone(),
     });

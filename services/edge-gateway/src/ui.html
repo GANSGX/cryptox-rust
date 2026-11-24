@@ -471,8 +471,8 @@
           <button class="ghost" onclick="simulateNewLaptopCloudSync()" title="Скачать EncryptedVaultBlob из облака на новое устройство">
             💻 Новый Ноутбук (Sync)
           </button>
-          <button class="ghost" onclick="openLoginModal()">
-            🔄 Сменить аккаунт
+          <button class="ghost" onclick="window.location.href='/auth'">
+            🔄 Сменить аккаунт / Выйти
           </button>
         </div>
       </div>
@@ -564,7 +564,12 @@
   </div>
 
   <script>
-    let currentUser = sessionStorage.getItem('cryptox_active_user') || null;
+    const urlUser = new URLSearchParams(location.search).get('user');
+    if (urlUser) {
+      sessionStorage.setItem('cryptox_active_user', urlUser);
+      localStorage.setItem('cryptox_active_user', urlUser);
+    }
+    let currentUser = urlUser || sessionStorage.getItem('cryptox_active_user') || localStorage.getItem('cryptox_active_user') || null;
     let currentPeer = null;
     let allLocalUsers = [];
     let unreadCounts = {};
@@ -944,7 +949,7 @@
         updateMyProfileHeader();
         await runDirectorySearch();
       } else {
-        openLoginModal();
+        window.location.href = '/auth';
       }
     })();
   </script>
