@@ -242,6 +242,9 @@ pub fn build_app_router(state: Arc<LivePrototypeState>) -> Router {
     Router::new()
         .route("/", get(serve_ui))
         .route("/ws", get(ws_upgrade_handler))
+        .route("/healthz", get(api_healthz))
+        .route("/readyz", get(api_readyz))
+        .route("/metrics", get(api_prometheus_metrics))
         .route("/api/state", get(api_get_state))
         .route("/api/register", post(api_register_user))
         .route("/api/cloud-sync-new-device", post(api_cloud_sync_new_device))
@@ -251,6 +254,60 @@ pub fn build_app_router(state: Arc<LivePrototypeState>) -> Router {
         .route("/api/chat/mark-read", post(api_mark_chat_read))
         .route("/api/chaos/toggle", post(api_chaos_toggle))
         .with_state(state)
+}
+
+async fn api_healthz() -> impl IntoResponse {
+    (
+        StatusCode::OK,
+        Json(serde_json::json!({
+            "status": "ok",
+            "node": "cryptox-edge-gateway",
+            "zero_trust_mesh": "XChaCha20-Poly1305+Ed25519",
+        })),
+    )
+}
+
+async fn api_readyz(State(state): State<Arc<LivePrototypeState>>) -> impl IntoResponse {
+    let gw = &state.gateway;
+    let msg_cb = gw.messaging_circuit_breaker().state();
+    let dir_cb = gw.directory_circuit_breaker().state();
+    let pres_cb = gw.presence_circuit_breaker().state();
+    let auth_cb = gw.auth_circuit_breaker().state();
+
+    let code = if msg_cb == crate::cluster_mesh::CircuitState::Open {
+        StatusCode::SERVICE_UNAVAILABLE
+    } else {
+        StatusCode::OK
+    };
+
+    (
+        code,
+        Json(serde_json::json!({
+            "hotpath_ready": msg_cb != crate::cluster_mesh::CircuitState::Open,
+            "circuits": {
+                "messaging_svc": msg_cb.as_str(),
+                "auth_vault_svc": auth_cb.as_str(),
+                "user_directory_svc": dir_cb.as_str(),
+                "presence_receipts_svc": pres_cb.as_str(),
+            },
+            "absorbed_sidecar_failures": gw.absorbed_sidecar_failures(),
+            "zero_trust_intrusions_blocked": gw.zero_trust_intrusions_blocked(),
+        })),
+    )
+}
+
+async fn api_prometheus_metrics(State(state): State<Arc<LivePrototypeState>>) -> impl IntoResponse {
+    let body = state
+        .gateway
+        .render_prometheus_metrics(state.disk_storage.as_deref());
+    (
+        StatusCode::OK,
+        [(
+            axum::http::header::CONTENT_TYPE,
+            "text/plain; version=0.0.4; charset=utf-8",
+        )],
+        body,
+    )
 }
 
 async fn serve_ui() -> Html<&'static str> {
