@@ -65,3 +65,25 @@ cargo test --package edge-gateway --test stage8_deep_security_hardening
 | `test_3_auth_brute_force_account_lockout_and_challenge_gc` | Attacker sends 5 invalid Ed25519 challenge signatures, then attempts 6th login with valid signature | Account locked for 5 minutes with `AuthVaultError::AccountTemporarilyLocked`; `issue_login_challenge` also blocked during lockout |
 | `test_4_device_id_spoofing_and_gateway_rate_limiting` | Laptop A (`claims.device_id = A`) sends envelope claiming `sender_device_id = B`; user floods gateway beyond 5 req/sec | Blocked with `MessagingError::SenderOrTenantSpoofing` and `GatewayError::RateLimitExceeded` |
 | `test_5_storage_targeted_l1_eviction_and_presence_ttl_pruning` | Attacker triggers L1 cache overflow (`cap = 4`) to cause Cache Stampede; stale heartbeats accumulate past 5-min TTL | Only 1 entry evicted (`l1_cached_directory_entries() == 4`, not `0`); stale presence pruned while active user stays online |
+
+---
+
+## 4. Static Security Lints & SonarQube CLI Audit Results
+
+1. **Strict All-Targets Rust Clippy Security & Correctness Audit:**
+   ```powershell
+   cargo clippy --workspace --all-targets -- -D warnings -D clippy::suspicious -D clippy::correctness -D clippy::perf -D clippy::complexity
+   ```
+   - **Result:** `0 errors, 0 warnings` across all 7 workspace crates, binaries, benchmark examples, and all 28 adversarial/property-based integration tests (`unsafe_code = "forbid"`, `unwrap_used = "deny"`, `expect_used = "deny"`).
+2. **SonarQube CLI (`v1.13.0` / `sonar-secrets v2.55.0.13968`):**
+   - Connected to `https://sonarcloud.io` (Organization: `gansgx`).
+   - Executed deterministic secrets & credential leak scan across `crates/`, `services/`, `docs/`, `.agents/`, `AGENTS.md`, `Cargo.toml`:
+     ```text
+     ✓ crates
+     ✓ services
+     ✓ docs
+     ✓ .agents
+     ✓ AGENTS.md
+     ✓ Cargo.toml
+     ✅ No secrets found · 1566ms
+     ```
