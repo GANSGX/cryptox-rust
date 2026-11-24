@@ -87,3 +87,14 @@ cargo test --package edge-gateway --test stage8_deep_security_hardening
      ✓ Cargo.toml
      ✅ No secrets found · 1566ms
      ```
+3. **SonarQube Cloud Server Analysis (`GANSGX_cryptox-rust`, Analysis `6316d858-bd16-4898-9aa9-1387e95c22a1`):**
+   - Initial scan (`0c8d8d90`) identified **13 issues**:
+     - `9` Supply-Chain Security vulnerabilities (`text:S8570`: `Cargo.lock` excluded in `.gitignore`, preventing deterministic dependency verification).
+     - `4` Web Reliability / WCAG accessibility bugs (`Web:InputWithoutLabelCheck` in `services/edge-gateway/src/ui.html`).
+   - All 13 issues were fixed in commit `db9d315` (`Cargo.lock` committed + explicit `<label for="...">` and `aria-label` added) and re-verified on SonarQube Cloud (`https://sonarcloud.io/project/overview?id=GANSGX_cryptox-rust`):
+     - **Lines of Code (`ncloc`):** `8,015`
+     - **Open Issues (`total`):** `0` (`debtTotal: 0`)
+     - **Vulnerabilities:** `0` (**Security Rating: A / `1.0`**)
+     - **Security Hotspots:** `0`
+     - **Bugs:** `0` (**Reliability Rating: A / `1.0`**)
+     - **Code Smells:** `0` (**Maintainability Rating: A / `1.0`**)
