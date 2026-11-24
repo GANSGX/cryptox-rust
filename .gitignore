@@ -1,6 +1,8 @@
 # Rust / Cargo
 /target/
 **/*.rs.bk
+node_modules/
+apps/web/dist/
 
 # Local databases & test artifacts
 *.db

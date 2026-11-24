@@ -55,12 +55,12 @@ async fn test_auth_register_login_wrong_password_and_recovery_key_reset() {
         let _ = axum::serve(listener, app).await;
     });
 
-    // 1. Регистрация с собственным паролем -> выдан Ключ Восстановления формата CX-XXXX-XXXX-XXXX-XXXX
+    // 1. Регистрация с собственным паролем и почтой -> выдан Ключ Восстановления формата CX-XXXX-XXXX-XXXX-XXXX
     let reg = http(
         addr,
         "POST",
         "/api/register",
-        Some(r#"{"username":"@vadim","display_name":"Вадим","password":"OldPass#2026"}"#),
+        Some(r#"{"username":"@vadim","email":"vadim@company.ru","display_name":"Вадим","password":"OldPass#2026"}"#),
     )
     .await;
     assert!(reg.contains("201 Created"), "регистрация: {reg}");
@@ -68,7 +68,7 @@ async fn test_auth_register_login_wrong_password_and_recovery_key_reset() {
     assert!(recovery_key.starts_with("CX-"));
     assert_eq!(recovery_key.len(), 22);
 
-    // 2. Вход с верным паролем проходит
+    // 2. Вход с верным паролем проходит КАК по @username, ТАК И по электронной почте
     let ok = http(
         addr,
         "POST",
@@ -76,7 +76,26 @@ async fn test_auth_register_login_wrong_password_and_recovery_key_reset() {
         Some(r#"{"username":"vadim","password":"OldPass#2026"}"#),
     )
     .await;
-    assert!(ok.contains("200 OK"), "вход: {ok}");
+    assert!(ok.contains("200 OK"), "вход по username: {ok}");
+
+    let ok_email = http(
+        addr,
+        "POST",
+        "/api/auth/login",
+        Some(r#"{"username":"vadim@company.ru","password":"OldPass#2026"}"#),
+    )
+    .await;
+    assert!(ok_email.contains("200 OK"), "вход по email: {ok_email}");
+
+    // 2.1. Вход с пустым паролем отклоняется (никаких демо-фоллбэков!)
+    let empty_pwd = http(
+        addr,
+        "POST",
+        "/api/auth/login",
+        Some(r#"{"username":"vadim","password":""}"#),
+    )
+    .await;
+    assert!(empty_pwd.contains("401"), "пустой пароль обязан давать 401: {empty_pwd}");
 
     // 3. Вход с неверным паролем отклоняется (сервер не пускает без знания пароля)
     let bad = http(

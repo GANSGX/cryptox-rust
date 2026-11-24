@@ -79,6 +79,7 @@ pub struct LivePrototypeState {
     pub gateway: Arc<EdgeGateway>,
     pub disk_storage: Option<Arc<EncryptedStorageEngine>>,
     pub client_enclaves: DashMap<String, Arc<ClientDeviceEnclave>>,
+    pub email_to_username: DashMap<String, String>,
     /// Шина мгновенных WebSocket-событий для всех открытых вкладок/клиентов (`new_message`, `read_receipt`, `typing`).
     pub ws_event_bus: broadcast::Sender<String>,
     pub auth_down: AtomicBool,
@@ -87,6 +88,15 @@ pub struct LivePrototypeState {
 }
 
 impl LivePrototypeState {
+    #[must_use]
+    pub fn resolve_identifier(&self, raw: &str) -> String {
+        let trimmed = raw.trim().to_ascii_lowercase();
+        if let Some(mapped) = self.email_to_username.get(&trimmed) {
+            return mapped.value().clone();
+        }
+        trimmed.trim_start_matches('@').to_string()
+    }
+
     #[must_use]
     pub fn new_with_seeded_company(gateway: Arc<EdgeGateway>) -> Arc<Self> {
         Self::build_internal(gateway, None)
@@ -117,6 +127,7 @@ impl LivePrototypeState {
             gateway,
             disk_storage,
             client_enclaves: DashMap::new(),
+            email_to_username: DashMap::new(),
             ws_event_bus,
             auth_down: AtomicBool::new(false),
             directory_down: AtomicBool::new(false),
@@ -498,6 +509,8 @@ pub struct RegisterReqDto {
     pub username: String,
     pub display_name: String,
     #[serde(default)]
+    pub email: String,
+    #[serde(default)]
     pub password: String,
 }
 
@@ -505,19 +518,39 @@ async fn api_register_user(
     State(state): State<Arc<LivePrototypeState>>,
     Json(req): Json<RegisterReqDto>,
 ) -> impl IntoResponse {
+    let clean_email = req.email.trim().to_ascii_lowercase();
+    if !clean_email.is_empty() && (!clean_email.contains('@') || !clean_email.contains('.')) {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({ "error": "Укажите корректный адрес электронной почты" })),
+        );
+    }
+    if !clean_email.is_empty() && state.email_to_username.contains_key(&clean_email) {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({ "error": "Аккаунт с такой электронной почтой уже зарегистрирован" })),
+        );
+    }
+
     match state.onboard_employee_enclave_with_password(
         &req.username,
         &req.display_name,
         req.password.as_bytes(),
     ) {
-        Ok((uname, recovery_key)) => (
-            StatusCode::CREATED,
-            Json(serde_json::json!({
-                "username": uname,
-                "display_name": req.display_name,
-                "recovery_key": recovery_key,
-            })),
-        ),
+        Ok((uname, recovery_key)) => {
+            if !clean_email.is_empty() {
+                state.email_to_username.insert(clean_email.clone(), uname.clone());
+            }
+            (
+                StatusCode::CREATED,
+                Json(serde_json::json!({
+                    "username": uname,
+                    "email": clean_email,
+                    "display_name": req.display_name,
+                    "recovery_key": recovery_key,
+                })),
+            )
+        }
         Err(e) => (
             StatusCode::BAD_REQUEST,
             Json(serde_json::json!({ "error": e })),
@@ -537,23 +570,24 @@ async fn api_auth_login(
     Json(req): Json<AuthLoginReqDto>,
 ) -> impl IntoResponse {
     let now_ms = LivePrototypeState::now_ms();
-    let norm = req.username.trim().trim_start_matches('@').to_ascii_lowercase();
+    if req.password.is_empty() {
+        return (
+            StatusCode::UNAUTHORIZED,
+            Json(serde_json::json!({ "error": "Введите пароль от аккаунта" })),
+        );
+    }
+    let norm = state.resolve_identifier(&req.username);
 
     let Some(enclave_ref) = state.client_enclaves.get(&norm) else {
         return (
             StatusCode::NOT_FOUND,
-            Json(serde_json::json!({ "error": "Аккаунт с таким @username не найден" })),
+            Json(serde_json::json!({ "error": "Аккаунт с таким логином или почтой не найден" })),
         );
     };
     let display_name = enclave_ref.display_name.clone();
-    let recovery_key = enclave_ref.recovery_key.clone();
     drop(enclave_ref);
 
-    let effective_pwd = if req.password.trim().is_empty() {
-        DEMO_PASSWORD
-    } else {
-        req.password.as_bytes()
-    };
+    let effective_pwd = req.password.as_bytes();
 
     let ch = match state
         .gateway
@@ -587,7 +621,6 @@ async fn api_auth_login(
             Json(serde_json::json!({
                 "username": norm,
                 "display_name": display_name,
-                "recovery_key": recovery_key,
             })),
         ),
         Err(e) => (
@@ -608,12 +641,12 @@ async fn api_auth_recover_password(
     State(state): State<Arc<LivePrototypeState>>,
     Json(req): Json<AuthRecoverPasswordReqDto>,
 ) -> impl IntoResponse {
-    let norm = req.username.trim().trim_start_matches('@').to_ascii_lowercase();
+    let norm = state.resolve_identifier(&req.username);
     let clean_rec = req.recovery_key.trim().to_ascii_uppercase();
-    if req.new_password.trim().len() < 4 {
+    if req.new_password.trim().len() < 6 {
         return (
             StatusCode::BAD_REQUEST,
-            Json(serde_json::json!({ "error": "Новый пароль должен содержать минимум 4 символа" })),
+            Json(serde_json::json!({ "error": "Новый пароль должен содержать минимум 6 символов" })),
         );
     }
 
