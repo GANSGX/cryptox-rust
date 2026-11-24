@@ -1,0 +1,21 @@
+[package]
+name = "cryptox-proto"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[dependencies]
+bytes.workspace = true
+prost.workspace = true
+uuid.workspace = true
+serde.workspace = true
+thiserror.workspace = true
+blake3.workspace = true
+subtle.workspace = true
+
+[dev-dependencies]
+proptest.workspace = true
+
+[lints]
+workspace = true

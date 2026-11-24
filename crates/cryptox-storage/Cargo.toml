@@ -1,0 +1,28 @@
+[package]
+name = "cryptox-storage"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[dependencies]
+cryptox-proto = { path = "../cryptox-proto" }
+bytes.workspace = true
+prost.workspace = true
+uuid.workspace = true
+serde.workspace = true
+thiserror.workspace = true
+zeroize.workspace = true
+aes-gcm.workspace = true
+blake3.workspace = true
+rand_core.workspace = true
+dashmap.workspace = true
+redb.workspace = true
+
+[dev-dependencies]
+cryptox-core = { path = "../cryptox-core" }
+proptest.workspace = true
+tempfile = "3.14"
+
+[lints]
+workspace = true

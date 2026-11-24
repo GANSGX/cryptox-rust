@@ -1,0 +1,29 @@
+[package]
+name = "edge-gateway"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[dependencies]
+cryptox-proto = { path = "../../crates/cryptox-proto" }
+cryptox-core = { path = "../../crates/cryptox-core" }
+cryptox-storage = { path = "../../crates/cryptox-storage" }
+auth-vault-svc = { path = "../auth-vault-svc" }
+user-directory-svc = { path = "../user-directory-svc" }
+presence-receipts-svc = { path = "../presence-receipts-svc" }
+messaging-svc = { path = "../messaging-svc" }
+bytes.workspace = true
+prost.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+axum.workspace = true
+dashmap.workspace = true
+
+[dev-dependencies]
+tempfile = "3.14"
+
+[lints]
+workspace = true

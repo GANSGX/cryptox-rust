@@ -1,0 +1,943 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>CRYPTOX-RUST 2026 — Корпоративный Мессенджер</title>
+  <style>
+    :root {
+      --bg-app: #0e1117;
+      --bg-sidebar: #141923;
+      --bg-chat: #0b0e14;
+      --bg-card: #1c2331;
+      --bg-card-hover: #232c3d;
+      --border: #263042;
+      --text: #f0f6fc;
+      --text-muted: #8b949e;
+      --accent: #3b82f6;
+      --accent-hover: #2563eb;
+      --bubble-mine: #1d4ed8;
+      --bubble-peer: #1e2636;
+      --green: #10b981;
+      --red: #ef4444;
+      --amber: #f59e0b;
+      --mono: 'JetBrains Mono', 'Cascadia Code', Consolas, monospace;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', Roboto, sans-serif;
+      background: var(--bg-app);
+      color: var(--text);
+      height: 100vh;
+      display: flex;
+      overflow: hidden;
+    }
+    /* Модальное окно Входа / Регистрации (своя сессия в каждой вкладке браузера) */
+    .auth-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(8, 11, 16, 0.88);
+      backdrop-filter: blur(10px);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 100;
+    }
+    .auth-overlay.hidden { display: none; }
+    .auth-modal {
+      width: 440px;
+      background: var(--bg-sidebar);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 26px;
+      box-shadow: 0 24px 60px rgba(0,0,0,0.6);
+    }
+    .auth-modal h2 { font-size: 20px; margin-bottom: 6px; display: flex; align-items: center; gap: 8px; }
+    .auth-modal p { font-size: 13px; color: var(--text-muted); margin-bottom: 18px; line-height: 1.45; }
+    .account-pick-list {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      max-height: 230px;
+      overflow-y: auto;
+      margin-bottom: 18px;
+    }
+    .account-pick-item {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 10px 14px;
+      border-radius: 10px;
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      cursor: pointer;
+      transition: 0.15s;
+    }
+    .account-pick-item:hover {
+      border-color: var(--accent);
+      background: rgba(59, 130, 246, 0.14);
+    }
+    .divider {
+      text-align: center;
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--text-muted);
+      margin: 14px 0;
+    }
+    input, button {
+      font-family: inherit;
+      font-size: 13px;
+      border-radius: 9px;
+      border: 1px solid var(--border);
+      background: var(--bg-card);
+      color: var(--text);
+      padding: 10px 13px;
+      outline: none;
+    }
+    input:focus { border-color: var(--accent); }
+    button {
+      cursor: pointer;
+      background: var(--accent);
+      border-color: var(--accent);
+      font-weight: 600;
+      transition: 0.15s;
+    }
+    button:hover { background: var(--accent-hover); }
+    button.ghost {
+      background: var(--bg-card);
+      border-color: var(--border);
+      color: var(--text);
+    }
+    button.ghost:hover { border-color: var(--accent); background: var(--bg-card-hover); }
+
+    /* Основной макет мессенджера */
+    .app-shell {
+      flex: 1;
+      display: flex;
+      height: 100vh;
+      overflow: hidden;
+    }
+    /* Левый сайдбар */
+    .sidebar {
+      width: 330px;
+      background: var(--bg-sidebar);
+      border-right: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+      flex-shrink: 0;
+    }
+    .my-profile-bar {
+      padding: 14px 16px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .profile-top {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .user-chip {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .avatar {
+      width: 38px;
+      height: 38px;
+      border-radius: 50%;
+      background: linear-gradient(135deg, #2563eb, #7c3aed);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 700;
+      font-size: 14px;
+      color: #fff;
+      flex-shrink: 0;
+    }
+    .avatar.peer-av {
+      background: linear-gradient(135deg, #059669, #0284c7);
+    }
+    .profile-actions {
+      display: flex;
+      gap: 6px;
+    }
+    .profile-actions button {
+      flex: 1;
+      padding: 6px 8px;
+      font-size: 11px;
+    }
+    .search-box {
+      padding: 10px 14px;
+      border-bottom: 1px solid var(--border);
+    }
+    .search-box input {
+      width: 100%;
+      border-radius: 10px;
+      padding: 9px 13px;
+    }
+    .contacts-list {
+      flex: 1;
+      overflow-y: auto;
+      padding: 8px;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    .contact-item {
+      display: flex;
+      align-items: center;
+      gap: 11px;
+      padding: 10px 12px;
+      border-radius: 11px;
+      cursor: pointer;
+      transition: 0.12s;
+      border: 1px solid transparent;
+    }
+    .contact-item:hover { background: var(--bg-card); }
+    .contact-item.active {
+      background: rgba(59, 130, 246, 0.16);
+      border-color: rgba(59, 130, 246, 0.45);
+    }
+    .contact-info { flex: 1; min-width: 0; }
+    .contact-name {
+      font-weight: 600;
+      font-size: 14px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .contact-handle {
+      font-size: 12px;
+      color: #60a5fa;
+      margin-top: 1px;
+    }
+    .contact-kt {
+      font-size: 10px;
+      font-family: var(--mono);
+      color: var(--text-muted);
+      margin-top: 2px;
+    }
+    .unread-pill {
+      background: var(--accent);
+      color: #fff;
+      font-size: 11px;
+      font-weight: 700;
+      padding: 2px 7px;
+      border-radius: 99px;
+    }
+
+    /* Центральная область чата */
+    .chat-area {
+      flex: 1;
+      background: var(--bg-chat);
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+    .chat-topbar {
+      height: 64px;
+      padding: 0 20px;
+      background: var(--bg-sidebar);
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .peer-header-info {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .peer-status {
+      font-size: 12px;
+      color: var(--green);
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      margin-top: 2px;
+    }
+    .peer-status.typing {
+      color: #60a5fa;
+      font-weight: 600;
+    }
+    .messages-scroll {
+      flex: 1;
+      overflow-y: auto;
+      padding: 22px 28px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .empty-state {
+      margin: auto;
+      text-align: center;
+      max-width: 380px;
+      color: var(--text-muted);
+    }
+    .empty-state h3 { color: var(--text); margin-bottom: 8px; font-size: 17px; }
+    .empty-state p { font-size: 13px; line-height: 1.5; }
+    .bubble-row {
+      display: flex;
+      flex-direction: column;
+      max-width: 68%;
+      align-self: flex-start;
+    }
+    .bubble-row.mine { align-self: flex-end; }
+    .bubble {
+      padding: 10px 14px;
+      border-radius: 14px 14px 14px 4px;
+      background: var(--bubble-peer);
+      border: 1px solid var(--border);
+      font-size: 14px;
+      line-height: 1.45;
+      word-break: break-word;
+    }
+    .bubble-row.mine .bubble {
+      background: var(--bubble-mine);
+      border-color: #3b82f6;
+      border-radius: 14px 14px 4px 14px;
+    }
+    .bubble-footer {
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+      gap: 8px;
+      font-size: 11px;
+      color: rgba(255,255,255,0.65);
+      margin-top: 4px;
+      font-family: var(--mono);
+    }
+    .checks { font-weight: 700; letter-spacing: -2px; }
+    .checks.read { color: #34d399; }
+    .composer-bar {
+      padding: 14px 20px;
+      background: var(--bg-sidebar);
+      border-top: 1px solid var(--border);
+      display: flex;
+      gap: 10px;
+      align-items: center;
+    }
+    .composer-bar input {
+      flex: 1;
+      padding: 12px 16px;
+      font-size: 14px;
+      border-radius: 12px;
+    }
+    .composer-bar button {
+      padding: 12px 20px;
+      border-radius: 12px;
+      font-size: 14px;
+    }
+
+    /* Правая выдвижная шторка: Инженерный Рентген, Зашифрованный Диск и Chaos */
+    .xray-drawer {
+      width: 390px;
+      background: var(--bg-sidebar);
+      border-left: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      transition: 0.2s;
+    }
+    .xray-drawer.closed { display: none; }
+    .xray-section {
+      padding: 14px;
+      border-bottom: 1px solid var(--border);
+    }
+    .xray-title {
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.07em;
+      color: var(--text-muted);
+      font-weight: 700;
+      margin-bottom: 8px;
+    }
+    .metric-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 6px;
+    }
+    .metric-box {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 8px 10px;
+    }
+    .metric-box .m-val {
+      font-family: var(--mono);
+      font-size: 15px;
+      font-weight: 700;
+      color: #60a5fa;
+    }
+    .metric-box .m-lbl {
+      font-size: 10px;
+      color: var(--text-muted);
+      margin-top: 2px;
+    }
+    .chaos-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 7px 10px;
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      margin-bottom: 6px;
+      font-size: 12px;
+    }
+    .wire-list {
+      flex: 1;
+      overflow-y: auto;
+      padding: 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      font-family: var(--mono);
+      font-size: 11px;
+    }
+    .wire-card {
+      padding: 9px;
+      border-radius: 8px;
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      color: var(--text-muted);
+      word-break: break-all;
+      line-height: 1.35;
+    }
+    .status-toast {
+      position: fixed;
+      bottom: 20px;
+      right: 20px;
+      background: #065f46;
+      border: 1px solid #10b981;
+      color: #d1fae5;
+      padding: 10px 16px;
+      border-radius: 10px;
+      font-size: 13px;
+      z-index: 200;
+      display: none;
+      box-shadow: 0 10px 30px rgba(0,0,0,0.45);
+    }
+    .status-toast.err {
+      background: #7f1d1d;
+      border-color: #ef4444;
+      color: #fee2e2;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- МОДАЛЬНОЕ ОКНО ВХОДА / РЕГИСТРАЦИИ (Независимое для каждой вкладки браузера) -->
+  <div class="auth-overlay" id="authOverlay">
+    <div class="auth-modal">
+      <h2>🛡️ Вход в CryptoX Enterprise</h2>
+      <p>
+        Откройте эту страницу в <b>двух вкладках браузера</b> под разными сотрудниками, чтобы протестировать живой E2EE чат по WebSocket и облачную синхронизацию!
+      </p>
+      <div class="xray-title">Войти в 1 клик под сотрудником компании:</div>
+      <div class="account-pick-list" id="modalAccountList"></div>
+
+      <div class="divider">или создать новый аккаунт</div>
+      <div style="display:flex; flex-direction:column; gap:8px;">
+        <input id="modalRegUsername" placeholder="@username (только латиница, цифры и _, напр. vadim_cto)" />
+        <input id="modalRegDisplay" placeholder="Имя и должность (напр. Вадим CTO)" />
+        <button onclick="registerAndLoginFromModal()">Зарегистрироваться и войти</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="status-toast" id="statusToast"></div>
+
+  <div class="app-shell">
+    <!-- ЛЕВЫЙ САЙДБАР МЕССЕНДЖЕРА -->
+    <aside class="sidebar">
+      <div class="my-profile-bar">
+        <div class="profile-top">
+          <div class="user-chip">
+            <div class="avatar" id="myAvatar">?</div>
+            <div>
+              <div style="font-weight:700; font-size:14px;" id="myDisplayName">Не выполнен вход</div>
+              <div style="font-size:12px; color:#60a5fa; font-family:var(--mono);" id="myHandle">@...</div>
+            </div>
+          </div>
+          <span id="wsBadge" style="font-size:11px; font-family:var(--mono); color:var(--green);">● WS LIVE</span>
+        </div>
+        <div class="profile-actions">
+          <button class="ghost" onclick="simulateNewLaptopCloudSync()" title="Скачать EncryptedVaultBlob из облака на новое устройство">
+            💻 Новый Ноутбук (Sync)
+          </button>
+          <button class="ghost" onclick="openLoginModal()">
+            🔄 Сменить аккаунт
+          </button>
+        </div>
+      </div>
+
+      <div class="search-box">
+        <input id="searchInput" placeholder="🔍 Найти коллегу по @username..." oninput="runDirectorySearch()" />
+      </div>
+
+      <div class="contacts-list" id="contactsList"></div>
+    </aside>
+
+    <!-- ЦЕНТРАЛЬНОЕ ОКНО ЧАТА -->
+    <main class="chat-area">
+      <div class="chat-topbar">
+        <div class="peer-header-info">
+          <div class="avatar peer-av" id="peerAvatar" style="display:none;">B</div>
+          <div>
+            <div style="font-weight:700; font-size:15px;" id="chatHeaderTitle">Выберите собеседника слева</div>
+            <div class="peer-status" id="chatHeaderStatus" style="display:none;">
+              ● в сети • E2EE (X25519 + XChaCha20-Poly1305)
+            </div>
+          </div>
+        </div>
+
+        <button class="ghost" onclick="toggleXrayDrawer()" id="xrayBtn">
+          🛡️ Рентген & Chaos
+        </button>
+      </div>
+
+      <div class="messages-scroll" id="messagesScroll">
+        <div class="empty-state">
+          <h3>Защищенный корпоративный мессенджер</h3>
+          <p>
+            Найдите коллегу слева через поиск по <b>@username</b> и кликните на него, чтобы мгновенно открыть сквозной зашифрованный диалог.
+          </p>
+        </div>
+      </div>
+
+      <div class="composer-bar" id="composerBar" style="display:none;">
+        <input id="messageInput" placeholder="Напишите сообщение..." oninput="notifyTypingOverWs()" onkeydown="if(event.key==='Enter') sendChatMessage()" />
+        <button onclick="sendChatMessage()">Отправить</button>
+      </div>
+    </main>
+
+    <!-- ПРАВАЯ ШТОРКА (ПО УМОЛЧАНИЮ СКРЫТА): ИНЖЕНЕРНЫЙ РЕНТГЕН, ДИСК И CHAOS -->
+    <aside class="xray-drawer closed" id="xrayDrawer">
+      <div class="xray-section">
+        <div class="xray-title">Зашифрованный Диск (cryptox-storage redb)</div>
+        <div class="metric-grid">
+          <div class="metric-box">
+            <div class="m-val" id="mL1Hits">0</div>
+            <div class="m-lbl">L1 RAM Cache Hits</div>
+          </div>
+          <div class="metric-box">
+            <div class="m-val" id="mL2Reads">0</div>
+            <div class="m-lbl">L2 SSD Disk Reads</div>
+          </div>
+          <div class="metric-box">
+            <div class="m-val" id="mDiskRecords">0</div>
+            <div class="m-lbl">Зашифровано на SSD</div>
+          </div>
+          <div class="metric-box">
+            <div class="m-val" id="mAbsorbed">0</div>
+            <div class="m-lbl">Bulkhead Absorbed</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="xray-section">
+        <div class="xray-title">Пульт Chaos-Инженерии (Bulkhead)</div>
+        <div style="font-size:11px; color:var(--text-muted); margin-bottom:8px;">
+          Отключите микросервисы ниже — активный чат продолжит работать на 100%!
+        </div>
+        <div id="chaosControlsBox"></div>
+      </div>
+
+      <div class="xray-section" style="border-bottom:none; padding-bottom:4px;">
+        <div class="xray-title">Слепая БД на диске (0% открытого текста)</div>
+      </div>
+      <div class="wire-list" id="blindDbList"></div>
+    </aside>
+  </div>
+
+  <script>
+    let currentUser = sessionStorage.getItem('cryptox_active_user') || null;
+    let currentPeer = null;
+    let allLocalUsers = [];
+    let unreadCounts = {};
+    let ws = null;
+    let typingTimeout = null;
+    let lastTypingSentMs = 0;
+
+    function toast(msg, isErr = false) {
+      const el = document.getElementById('statusToast');
+      el.textContent = msg;
+      el.className = isErr ? 'status-toast err' : 'status-toast';
+      el.style.display = 'block';
+      setTimeout(() => { el.style.display = 'none'; }, 4500);
+    }
+
+    function initials(name) {
+      if (!name) return '?';
+      return name.trim().slice(0, 2).toUpperCase();
+    }
+
+    function formatTime(tsMs) {
+      const d = new Date(tsMs);
+      return d.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    }
+
+    function connectWebSocket() {
+      const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+      ws = new WebSocket(`${proto}//${location.host}/ws`);
+      const badge = document.getElementById('wsBadge');
+
+      ws.onopen = () => {
+        badge.textContent = '● WS LIVE';
+        badge.style.color = '#10b981';
+      };
+
+      ws.onclose = () => {
+        badge.textContent = '○ WS RECONNECT';
+        badge.style.color = '#f59e0b';
+        setTimeout(connectWebSocket, 1500);
+      };
+
+      ws.onmessage = async (ev) => {
+        try {
+          const msg = JSON.parse(ev.data);
+          if (msg.type === 'new_message') {
+            if (currentPeer && (
+              (msg.sender === currentPeer.username && msg.recipient === currentUser) ||
+              (msg.sender === currentUser && msg.recipient === currentPeer.username)
+            )) {
+              await refreshChatView();
+              if (msg.sender === currentPeer.username && msg.recipient === currentUser) {
+                await markCurrentChatAsRead();
+              }
+            } else if (msg.recipient === currentUser) {
+              unreadCounts[msg.sender] = (unreadCounts[msg.sender] || 0) + 1;
+              await runDirectorySearch();
+              toast(`💬 Новое зашифрованное сообщение от @${msg.sender}`);
+            }
+            await refreshStateMetrics();
+          } else if (msg.type === 'read_receipt') {
+            if (currentPeer && msg.reader === currentPeer.username && msg.peer === currentUser) {
+              await refreshChatView();
+            }
+          } else if (msg.type === 'typing') {
+            if (currentPeer && msg.from === currentPeer.username && msg.to === currentUser) {
+              showPeerTypingIndicator();
+            }
+          } else if (msg.type === 'directory_updated' || msg.type === 'chaos_updated') {
+            await refreshStateMetrics();
+            await runDirectorySearch();
+          }
+        } catch (_) {}
+      };
+    }
+
+    function notifyTypingOverWs() {
+      if (!ws || ws.readyState !== WebSocket.OPEN || !currentUser || !currentPeer) return;
+      const now = Date.now();
+      if (now - lastTypingSentMs < 800) return;
+      lastTypingSentMs = now;
+      ws.send(JSON.stringify({
+        type: 'typing',
+        from: currentUser,
+        to: currentPeer.username
+      }));
+    }
+
+    function showPeerTypingIndicator() {
+      const st = document.getElementById('chatHeaderStatus');
+      st.textContent = `✍️ @${currentPeer.username} печатает...`;
+      st.className = 'peer-status typing';
+      if (typingTimeout) clearTimeout(typingTimeout);
+      typingTimeout = setTimeout(() => {
+        st.textContent = '● в сети • E2EE (X25519 + XChaCha20-Poly1305)';
+        st.className = 'peer-status';
+      }, 2000);
+    }
+
+    async function refreshStateMetrics() {
+      const res = await fetch('/api/state');
+      const data = await res.json();
+      allLocalUsers = data.local_users;
+
+      document.getElementById('mL1Hits').textContent = data.services.storage_l1_hits;
+      document.getElementById('mL2Reads').textContent = data.services.storage_l2_reads;
+      document.getElementById('mDiskRecords').textContent = data.services.storage_records_written;
+      document.getElementById('mAbsorbed').textContent = data.services.absorbed_sidecar_failures;
+
+      renderChaosControls(data.services);
+      renderModalAccountList();
+      updateMyProfileHeader();
+    }
+
+    function renderModalAccountList() {
+      const box = document.getElementById('modalAccountList');
+      box.innerHTML = '';
+      allLocalUsers.forEach(u => {
+        const div = document.createElement('div');
+        div.className = 'account-pick-item';
+        div.onclick = () => loginAsUser(u.username);
+        div.innerHTML = `
+          <div style="display:flex; align-items:center; gap:10px;">
+            <div class="avatar">${initials(u.username)}</div>
+            <div>
+              <div style="font-weight:700; font-size:14px;">${u.display_name}</div>
+              <div style="font-size:12px; color:#60a5fa; font-family:var(--mono);">@${u.username} • Ноутбук #${u.device_number} (Vault v${u.vault_version})</div>
+            </div>
+          </div>
+          <span style="font-size:12px; color:#34d399; font-weight:600;">Войти →</span>
+        `;
+        box.appendChild(div);
+      });
+    }
+
+    function openLoginModal() {
+      document.getElementById('authOverlay').classList.remove('hidden');
+    }
+
+    async function loginAsUser(username) {
+      currentUser = username;
+      sessionStorage.setItem('cryptox_active_user', username);
+      document.getElementById('authOverlay').classList.add('hidden');
+      updateMyProfileHeader();
+      if (currentPeer && currentPeer.username === currentUser) {
+        currentPeer = null;
+      }
+      await runDirectorySearch();
+      if (currentPeer) await refreshChatView();
+    }
+
+    function updateMyProfileHeader() {
+      const me = allLocalUsers.find(u => u.username === currentUser);
+      if (!me) return;
+      document.getElementById('myAvatar').textContent = initials(me.username);
+      document.getElementById('myDisplayName').textContent = me.display_name;
+      document.getElementById('myHandle').textContent = `@${me.username} • Девайс #${me.device_number} (Vault v${me.vault_version})`;
+    }
+
+    async function registerAndLoginFromModal() {
+      const uname = document.getElementById('modalRegUsername').value.trim();
+      const dname = document.getElementById('modalRegDisplay').value.trim() || uname;
+      if (!uname) return;
+      const res = await fetch('/api/register', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ username: uname, display_name: dname })
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        toast(data.error || 'Ошибка регистрации', true);
+        return;
+      }
+      document.getElementById('modalRegUsername').value = '';
+      document.getElementById('modalRegDisplay').value = '';
+      await refreshStateMetrics();
+      await loginAsUser(data.username);
+      toast(`✅ Аккаунт @${data.username} создан и сохранен на зашифрованный SSD`);
+    }
+
+    async function simulateNewLaptopCloudSync() {
+      if (!currentUser) return;
+      const res = await fetch('/api/cloud-sync-new-device', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ username: currentUser })
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        toast(data.error || 'Ошибка облачной синхронизации', true);
+        return;
+      }
+      await refreshStateMetrics();
+      if (currentPeer) await refreshChatView();
+      toast(`💻 Ноутбук #${data.device_number}: сейф CloudKeyVault (${data.vault_bytes}Б) расшифрован, чаты синхронизированы!`);
+    }
+
+    async function runDirectorySearch() {
+      if (!currentUser) return;
+      const q = document.getElementById('searchInput').value.trim();
+      const res = await fetch(`/api/search?caller=${encodeURIComponent(currentUser)}&q=${encodeURIComponent(q)}`);
+      const box = document.getElementById('contactsList');
+      const data = await res.json();
+      if (!res.ok) {
+        box.innerHTML = `<div style="padding:12px; color:#fca5a5; font-size:12px;">⚠️ Поиск недоступен (${data.error}). Но уже открытые чаты продолжают работать!</div>`;
+        return;
+      }
+      box.innerHTML = '';
+      data.entries.forEach(e => {
+        if (e.username === currentUser) return;
+        const item = document.createElement('div');
+        const isActive = currentPeer && currentPeer.username === e.username;
+        item.className = 'contact-item' + (isActive ? ' active' : '');
+        item.onclick = () => selectPeer(e);
+        const unread = unreadCounts[e.username] || 0;
+        item.innerHTML = `
+          <div class="avatar peer-av">${initials(e.username)}</div>
+          <div class="contact-info">
+            <div class="contact-name">${e.display_name}</div>
+            <div class="contact-handle">@${e.username}</div>
+            <div class="contact-kt">KT #${e.transparency_seq}: ${e.transparency_hash_short}</div>
+          </div>
+          ${unread > 0 ? `<span class="unread-pill">${unread}</span>` : ''}
+        `;
+        box.appendChild(item);
+      });
+    }
+
+    async function selectPeer(peerEntry) {
+      currentPeer = peerEntry;
+      unreadCounts[peerEntry.username] = 0;
+      document.getElementById('peerAvatar').style.display = 'flex';
+      document.getElementById('peerAvatar').textContent = initials(peerEntry.username);
+      document.getElementById('chatHeaderTitle').textContent = `${peerEntry.display_name} (@${peerEntry.username})`;
+      document.getElementById('chatHeaderStatus').style.display = 'flex';
+      document.getElementById('composerBar').style.display = 'flex';
+      document.getElementById('messageInput').focus();
+      await runDirectorySearch();
+      await refreshChatView();
+      await markCurrentChatAsRead();
+    }
+
+    async function markCurrentChatAsRead() {
+      if (!currentUser || !currentPeer) return;
+      await fetch('/api/chat/mark-read', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({
+          reader_username: currentUser,
+          peer_username: currentPeer.username
+        })
+      });
+    }
+
+    async function sendChatMessage() {
+      if (!currentUser || !currentPeer) return;
+      const input = document.getElementById('messageInput');
+      const text = input.value.trim();
+      if (!text) return;
+      input.value = '';
+      const res = await fetch('/api/chat/send', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({
+          sender_username: currentUser,
+          recipient_username: currentPeer.username,
+          plaintext: text
+        })
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        toast(data.error || 'Ошибка отправки', true);
+        return;
+      }
+      await refreshChatView();
+      await refreshStateMetrics();
+    }
+
+    async function refreshChatView() {
+      if (!currentUser || !currentPeer) return;
+      const res = await fetch(`/api/chat/history?caller=${encodeURIComponent(currentUser)}&peer=${encodeURIComponent(currentPeer.username)}`);
+      const data = await res.json();
+      if (!res.ok) {
+        toast(data.error || 'Ошибка загрузки чата', true);
+        return;
+      }
+      const box = document.getElementById('messagesScroll');
+      const dbList = document.getElementById('blindDbList');
+      box.innerHTML = '';
+      dbList.innerHTML = '';
+
+      if (data.messages.length === 0) {
+        box.innerHTML = `
+          <div class="empty-state">
+            <h3>Начните диалог с @${currentPeer.username}</h3>
+            <p>Сообщения шифруются сквозным шифрованием XChaCha20-Poly1305 с одноразовыми ключами BLAKE3 Ratchet и сохраняются в 48-байтный B+Tree индекс на диске.</p>
+          </div>
+        `;
+        return;
+      }
+
+      data.messages.forEach(m => {
+        const isMine = m.sender_username === currentUser;
+        const row = document.createElement('div');
+        row.className = 'bubble-row' + (isMine ? ' mine' : '');
+        const checkMarks = isMine
+          ? (m.is_read_by_peer ? '<span class="checks read" title="Прочитано собеседником">✓✓</span>' : '<span class="checks" title="Доставлено и сохранено на SSD">✓</span>')
+          : '';
+        row.innerHTML = `
+          <div class="bubble">
+            <div class="b-text"></div>
+            <div class="bubble-footer">
+              <span>${formatTime(m.timestamp_ms)}</span>
+              <span>#${m.ratchet_step}</span>
+              ${checkMarks}
+            </div>
+          </div>
+        `;
+        row.querySelector('.b-text').textContent = m.decrypted_text;
+        box.appendChild(row);
+
+        const w = document.createElement('div');
+        w.className = 'wire-card';
+        w.innerHTML = `
+          <div style="color:#f59e0b; font-weight:700; margin-bottom:3px;">📦 UUIDv7 ${m.message_id_short} (${m.wire_bytes_len}B)</div>
+          <div><b>Ciphertext:</b> ${m.ciphertext_hex}</div>
+          <div><b>Ed25519:</b> ${m.signature_hex_short}...</div>
+        `;
+        dbList.appendChild(w);
+      });
+
+      box.scrollTop = box.scrollHeight;
+      dbList.scrollTop = dbList.scrollHeight;
+    }
+
+    function toggleXrayDrawer() {
+      document.getElementById('xrayDrawer').classList.toggle('closed');
+    }
+
+    function renderChaosControls(s) {
+      const items = [
+        { id: 'auth', label: 'auth-vault-svc', down: s.auth_down },
+        { id: 'directory', label: 'user-directory-svc', down: s.directory_down },
+        { id: 'presence', label: 'presence-receipts-svc', down: s.presence_down },
+      ];
+      const box = document.getElementById('chaosControlsBox');
+      box.innerHTML = '';
+      items.forEach(it => {
+        const div = document.createElement('div');
+        div.className = 'chaos-row';
+        div.innerHTML = `
+          <span>
+            <b style="color:${it.down ? '#f87171' : '#34d399'}">●</b> ${it.label}
+          </span>
+          <button style="padding:4px 9px; font-size:11px; background:${it.down ? '#10b981' : '#ef4444'}; border-color:${it.down ? '#10b981' : '#ef4444'};"
+                  onclick="toggleChaos('${it.id}', ${!it.down})">
+            ${it.down ? 'Включить' : '💥 Уронить'}
+          </button>
+        `;
+        box.appendChild(div);
+      });
+    }
+
+    async function toggleChaos(svc, outage) {
+      await fetch('/api/chaos/toggle', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ service: svc, outage })
+      });
+      await refreshStateMetrics();
+    }
+
+    (async function init() {
+      connectWebSocket();
+      await refreshStateMetrics();
+      if (currentUser && allLocalUsers.some(u => u.username === currentUser)) {
+        document.getElementById('authOverlay').classList.add('hidden');
+        updateMyProfileHeader();
+        await runDirectorySearch();
+      } else {
+        openLoginModal();
+      }
+    })();
+  </script>
+</body>
+</html>

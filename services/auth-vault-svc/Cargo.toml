@@ -1,0 +1,26 @@
+[package]
+name = "auth-vault-svc"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[dependencies]
+cryptox-proto = { path = "../../crates/cryptox-proto" }
+cryptox-core = { path = "../../crates/cryptox-core" }
+bytes.workspace = true
+prost.workspace = true
+uuid.workspace = true
+serde.workspace = true
+thiserror.workspace = true
+zeroize.workspace = true
+blake3.workspace = true
+ed25519-dalek.workspace = true
+rand_core.workspace = true
+dashmap.workspace = true
+
+[dev-dependencies]
+proptest.workspace = true
+
+[lints]
+workspace = true

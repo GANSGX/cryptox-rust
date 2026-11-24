@@ -1,0 +1,25 @@
+[package]
+name = "user-directory-svc"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[dependencies]
+cryptox-proto = { path = "../../crates/cryptox-proto" }
+cryptox-core = { path = "../../crates/cryptox-core" }
+auth-vault-svc = { path = "../auth-vault-svc" }
+bytes.workspace = true
+prost.workspace = true
+uuid.workspace = true
+serde.workspace = true
+thiserror.workspace = true
+blake3.workspace = true
+subtle.workspace = true
+dashmap.workspace = true
+
+[dev-dependencies]
+proptest.workspace = true
+
+[lints]
+workspace = true

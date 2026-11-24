@@ -1,0 +1,47 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/cryptox-proto",
+    "crates/cryptox-core",
+    "crates/cryptox-storage",
+    "services/auth-vault-svc",
+    "services/user-directory-svc",
+    "services/presence-receipts-svc",
+    "services/messaging-svc",
+    "services/edge-gateway",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+authors = ["CryptoX Architecture Team"]
+license = "LicenseRef-Proprietary"
+
+[workspace.dependencies]
+bytes = "1.9"
+prost = "0.13"
+uuid = { version = "1.11", features = ["v7", "serde"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+thiserror = "2.0"
+zeroize = { version = "1.8", features = ["derive"] }
+subtle = "2.6"
+chacha20poly1305 = "0.10"
+aes-gcm = "0.10"
+argon2 = "0.5"
+blake3 = "1.5"
+ed25519-dalek = { version = "2.1", features = ["rand_core", "zeroize"] }
+x25519-dalek = { version = "2.0", features = ["static_secrets", "zeroize"] }
+rand_core = { version = "0.6", features = ["getrandom"] }
+dashmap = "6.1"
+redb = "2.4"
+tokio = { version = "1.43", features = ["sync", "rt", "rt-multi-thread", "macros", "net", "time", "io-util"] }
+axum = { version = "0.8", features = ["ws"] }
+proptest = "1.6"
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+
+[workspace.lints.clippy]
+unwrap_used = "deny"
+expect_used = "deny"

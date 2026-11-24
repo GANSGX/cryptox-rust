@@ -1,0 +1,16 @@
+[package]
+name = "messaging-svc"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[dependencies]
+cryptox-proto = { path = "../../crates/cryptox-proto" }
+auth-vault-svc = { path = "../auth-vault-svc" }
+thiserror.workspace = true
+dashmap.workspace = true
+tokio.workspace = true
+
+[lints]
+workspace = true
