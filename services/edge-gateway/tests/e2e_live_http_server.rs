@@ -11,6 +11,8 @@
 //! 6. Отключение всех 3 второстепенных сервисов (`POST /api/chaos/toggle`) и успешную отправку сообщения
 //!    в открытый чат во время аварии.
 
+#![allow(clippy::expect_used, clippy::unwrap_used)]
+
 use auth_vault_svc::AuthVaultService;
 use edge_gateway::{
     http_server::{build_app_router, LivePrototypeState},

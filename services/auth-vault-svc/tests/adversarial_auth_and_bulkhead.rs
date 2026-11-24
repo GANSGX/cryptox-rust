@@ -6,6 +6,8 @@
 //!   продолжает проверять токены активных сотрудников со 100% успехом;
 //! - `proptest` фаззинг сессионных токенов.
 
+#![allow(clippy::expect_used, clippy::unwrap_used)]
+
 use auth_vault_svc::{AuthVaultError, AuthVaultService};
 use cryptox_core::{Argon2Profile, CloudKeyVault, UserIdentity};
 use cryptox_proto::{

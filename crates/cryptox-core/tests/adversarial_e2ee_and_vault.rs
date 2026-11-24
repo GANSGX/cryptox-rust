@@ -8,6 +8,8 @@
 //! 4. Мгновенное уничтожение ключей при увольнении сотрудника (`crypto_shred()`).
 //! 5. Полное отражение атак взломанного сервера (MITM подмена ключа, переклейка сообщения в чужой чат, битовые мутации).
 
+#![allow(clippy::expect_used, clippy::unwrap_used)]
+
 use cryptox_core::{
     Aes256GcmProvider, Argon2Profile, ChatSession, CloudKeyVault, CryptoError, CryptoProvider,
     TenantComplianceKeyPair, UserIdentity, XChaCha20Poly1305Provider,

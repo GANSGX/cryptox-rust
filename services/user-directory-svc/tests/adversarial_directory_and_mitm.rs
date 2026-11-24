@@ -4,6 +4,8 @@
 //! 3. Отражение MITM-подмены ключа `X25519`, подмены корневого `Ed25519` и отката версии `key_version`;
 //! 4. **Chaos / Bulkhead Test**: работа поиска при упавшем `auth-vault-svc` и работа открытых чатов при упавшем `user-directory-svc`.
 
+#![allow(clippy::expect_used, clippy::unwrap_used)]
+
 use auth_vault_svc::AuthVaultService;
 use cryptox_core::{
     Argon2Profile, ChatSession, CloudKeyVault, CryptoError, UserIdentity,

@@ -9,6 +9,8 @@
 //! 5. `messaging-svc`: Блокировка подмены устройства отправителя (`Device ID Spoofing`);
 //! 6. `edge-gateway`: Изолированный `TokenBucketRateLimiter` (блокировка DDoS-спамера без влияния на соседних сотрудников).
 
+#![allow(clippy::expect_used, clippy::unwrap_used)]
+
 use auth_vault_svc::{
     AuthVaultError, AuthVaultService, ACCOUNT_LOCKOUT_DURATION_MS, LOGIN_CHALLENGE_TTL_MS,
 };

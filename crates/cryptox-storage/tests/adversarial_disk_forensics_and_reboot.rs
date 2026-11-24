@@ -6,6 +6,8 @@
 //! 3. **Disk Theft / Tamper Detection:** попытка открыть украденный файл БД без корневого ключа KMS/HSM
 //!    гарантированно возвращает `Err(StorageError::DiskTamperDetected)`.
 
+#![allow(clippy::expect_used, clippy::unwrap_used)]
+
 use cryptox_core::{
     Argon2Profile, ChatSession, CloudKeyVault, UserIdentity, XChaCha20Poly1305Provider,
 };

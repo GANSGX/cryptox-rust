@@ -9,6 +9,8 @@
 //! 3. **Защита от спуфинга отправителя (`Sender Spoofing Attack`):** попытка подставить чужой `sender_user_id` блокируется.
 //! 4. **Полный сквозной сценарий облачной синхронизации истории на новом ноутбуке** (`CloudKeyVault` + `UUIDv7` Cursor History).
 
+#![allow(clippy::expect_used, clippy::unwrap_used)]
+
 use auth_vault_svc::AuthVaultService;
 use cryptox_core::{
     Argon2Profile, ChatSession, CloudKeyVault, UserIdentity, XChaCha20Poly1305Provider,
