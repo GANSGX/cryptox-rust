@@ -1,26 +1,43 @@
 <!DOCTYPE html>
-<html lang="ru">
+<html lang="ru" class="dark">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>CryptoX Enterprise Status — Мониторинг Кластера и Микросервисов</title>
+  <title>CryptoX Status — Production Infrastructure &amp; System Health</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
   <style>
+    /* ==========================================================================
+       SHADCN/UI — ZINC / OBSIDIAN MONOCHROME DESIGN SYSTEM (PRODUCTION)
+       ========================================================================== */
     :root {
-      --bg: #070b14;
-      --panel: #0f172a;
-      --panel-2: #131c31;
-      --border: #1e293b;
-      --text: #f8fafc;
-      --muted: #94a3b8;
-      --green: #10b981;
-      --green-bg: rgba(16, 185, 129, 0.12);
+      --background: #09090b;
+      --surface: #121214;
+      --surface-elevated: #18181b;
+      --surface-hover: #1f1f23;
+      --border: #222226;
+      --border-subtle: rgba(255, 255, 255, 0.06);
+      --border-focus: #3f3f46;
+      --foreground: #fafafa;
+      --foreground-secondary: #d4d4d8;
+      --muted: #a1a1aa;
+      --muted-subtle: #71717a;
+      --primary: #fafafa;
+      --primary-foreground: #09090b;
+      --secondary: #1c1c20;
+      --secondary-foreground: #e4e4e7;
+      --emerald: #10b981;
+      --emerald-soft: rgba(16, 185, 129, 0.14);
       --amber: #f59e0b;
-      --amber-bg: rgba(245, 158, 11, 0.14);
-      --red: #ef4444;
-      --red-bg: rgba(239, 68, 68, 0.14);
-      --blue: #3b82f6;
-      --mono: "JetBrains Mono", "Cascadia Code", Consolas, monospace;
-      --sans: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      --amber-soft: rgba(245, 158, 11, 0.14);
+      --rose: #f43f5e;
+      --rose-soft: rgba(244, 63, 94, 0.14);
+      --radius-card: 22px;
+      --radius-inner: 14px;
+      --radius-pill: 9999px;
+      --font-sans: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      --font-mono: "JetBrains Mono", Consolas, monospace;
     }
 
     * {
@@ -30,572 +47,951 @@
     }
 
     body {
-      background: radial-gradient(circle at top, #0f172a 0%, #070b14 70%);
-      color: var(--text);
-      font-family: var(--sans);
+      background-color: var(--background);
+      color: var(--foreground);
+      font-family: var(--font-sans);
+      -webkit-font-smoothing: antialiased;
       min-height: 100vh;
-      padding: 28px 20px 60px;
+      selection-background-color: #27272a;
     }
 
-    .container {
-      max-width: 1160px;
-      margin: 0 auto;
-    }
-
-    .topbar {
+    /* TOP NAVIGATION BAR (SHADCN DOCS STYLE) */
+    .navbar {
+      position: sticky;
+      top: 0;
+      z-index: 40;
+      height: 60px;
+      background: rgba(9, 9, 11, 0.82);
+      backdrop-filter: blur(14px);
+      border-bottom: 1px solid var(--border-subtle);
+      padding: 0 28px;
       display: flex;
+      align-items: center;
       justify-content: space-between;
-      align-items: center;
-      margin-bottom: 24px;
-      padding-bottom: 18px;
-      border-bottom: 1px solid var(--border);
-      flex-wrap: wrap;
-      gap: 12px;
     }
 
-    .brand {
+    .nav-left {
       display: flex;
       align-items: center;
-      gap: 12px;
+      gap: 24px;
     }
 
-    .brand-logo {
-      width: 38px;
-      height: 38px;
-      border-radius: 10px;
-      background: linear-gradient(135deg, #2563eb, #10b981);
-      display: flex;
+    .brand-link {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      text-decoration: none;
+      color: var(--foreground);
+      font-weight: 600;
+      font-size: 14px;
+      letter-spacing: -0.02em;
+    }
+
+    .brand-mark {
+      width: 24px;
+      height: 24px;
+      border-radius: 6px;
+      background: var(--foreground);
+      color: var(--background);
+      display: inline-flex;
       align-items: center;
       justify-content: center;
-      font-weight: 800;
-      font-size: 18px;
-      box-shadow: 0 0 20px rgba(16, 185, 129, 0.25);
-    }
-
-    .brand-title {
-      font-size: 19px;
-      font-weight: 800;
-      letter-spacing: -0.3px;
-    }
-
-    .brand-sub {
+      font-weight: 700;
       font-size: 12px;
-      color: var(--muted);
-      font-family: var(--mono);
     }
 
-    .nav-links {
+    .nav-menu {
       display: flex;
       align-items: center;
-      gap: 10px;
-    }
-
-    .btn {
-      background: var(--panel-2);
-      color: var(--text);
-      border: 1px solid var(--border);
-      padding: 8px 14px;
-      border-radius: 8px;
-      font-size: 12px;
-      font-weight: 600;
-      cursor: pointer;
-      text-decoration: none;
-      display: inline-flex;
-      align-items: center;
-      gap: 6px;
-      transition: all 0.15s ease;
-    }
-
-    .btn:hover {
-      border-color: var(--blue);
-      background: #1e293b;
-    }
-
-    .btn.primary {
-      background: #1d4ed8;
-      border-color: #3b82f6;
-    }
-
-    .btn.danger {
-      background: rgba(239, 68, 68, 0.15);
-      border-color: rgba(239, 68, 68, 0.45);
-      color: #fca5a5;
-    }
-
-    .btn.danger:hover {
-      background: rgba(239, 68, 68, 0.28);
-    }
-
-    .btn.success {
-      background: rgba(16, 185, 129, 0.15);
-      border-color: rgba(16, 185, 129, 0.45);
-      color: #6ee7b7;
-    }
-
-    /* ГЛАВНЫЙ БАННЕР СТАТУСА ПЛАТФОРМЫ (КАК У CLOUDFLARE / DISCORD / GITHUB) */
-    .global-banner {
-      border-radius: 14px;
-      padding: 22px 26px;
-      margin-bottom: 24px;
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      flex-wrap: wrap;
-      gap: 16px;
-      border: 1px solid rgba(16, 185, 129, 0.35);
-      background: linear-gradient(90deg, rgba(16, 185, 129, 0.16) 0%, rgba(15, 23, 42, 0.9) 100%);
-      transition: all 0.25s ease;
-    }
-
-    .global-banner.degraded {
-      border-color: rgba(245, 158, 11, 0.5);
-      background: linear-gradient(90deg, rgba(245, 158, 11, 0.18) 0%, rgba(15, 23, 42, 0.95) 100%);
-    }
-
-    .global-banner.critical {
-      border-color: rgba(239, 68, 68, 0.55);
-      background: linear-gradient(90deg, rgba(239, 68, 68, 0.2) 0%, rgba(15, 23, 42, 0.95) 100%);
-    }
-
-    .banner-left {
-      display: flex;
-      align-items: center;
-      gap: 16px;
-    }
-
-    .pulse-dot {
-      width: 18px;
-      height: 18px;
-      border-radius: 50%;
-      background: var(--green);
-      box-shadow: 0 0 0 6px rgba(16, 185, 129, 0.2);
-      flex-shrink: 0;
-    }
-
-    .global-banner.degraded .pulse-dot {
-      background: var(--amber);
-      box-shadow: 0 0 0 6px rgba(245, 158, 11, 0.22);
-    }
-
-    .banner-headline {
-      font-size: 20px;
-      font-weight: 800;
-    }
-
-    .banner-desc {
-      font-size: 13px;
-      color: #cbd5e1;
-      margin-top: 4px;
-    }
-
-    .banner-meta {
-      text-align: right;
-      font-family: var(--mono);
-      font-size: 12px;
-      color: var(--muted);
-    }
-
-    /* КАРТОЧКИ МЕТРИК БЕЗОПАСНОСТИ И ПРОИЗВОДИТЕЛЬНОСТИ */
-    .kpi-grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
-      gap: 14px;
-      margin-bottom: 26px;
-    }
-
-    .kpi-card {
-      background: var(--panel);
-      border: 1px solid var(--border);
-      border-radius: 12px;
-      padding: 16px 18px;
-    }
-
-    .kpi-label {
-      font-size: 11px;
-      text-transform: uppercase;
-      letter-spacing: 0.6px;
-      color: var(--muted);
-      font-weight: 700;
-    }
-
-    .kpi-value {
-      font-size: 26px;
-      font-weight: 800;
-      font-family: var(--mono);
-      margin-top: 8px;
-      color: var(--text);
-    }
-
-    .kpi-sub {
-      font-size: 11px;
-      color: var(--muted);
-      margin-top: 4px;
-      font-family: var(--mono);
-    }
-
-    /* СПИСОК МИКРОСЕРВИСОВ С UPTIME-ШКАЛОЙ (90 ТИКОВ) И ПРЕДОХРАНИТЕЛЯМИ */
-    .section-header {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      margin-bottom: 12px;
-      flex-wrap: wrap;
-      gap: 10px;
-    }
-
-    .section-title {
-      font-size: 15px;
-      font-weight: 700;
-      text-transform: uppercase;
-      letter-spacing: 0.7px;
-      color: #cbd5e1;
-    }
-
-    .services-card {
-      background: var(--panel);
-      border: 1px solid var(--border);
-      border-radius: 14px;
-      overflow: hidden;
-      margin-bottom: 26px;
-    }
-
-    .svc-row {
-      padding: 18px 22px;
-      border-bottom: 1px solid var(--border);
-      display: flex;
-      flex-direction: column;
-      gap: 12px;
-    }
-
-    .svc-row:last-child {
-      border-bottom: none;
-    }
-
-    .svc-top {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      flex-wrap: wrap;
-      gap: 12px;
-    }
-
-    .svc-info {
-      display: flex;
-      align-items: center;
-      gap: 12px;
-      flex-wrap: wrap;
-    }
-
-    .svc-name {
-      font-size: 16px;
-      font-weight: 700;
-      font-family: var(--mono);
-    }
-
-    .svc-tier-tag {
-      font-size: 10px;
-      padding: 3px 8px;
-      border-radius: 999px;
-      font-weight: 700;
-      text-transform: uppercase;
-      letter-spacing: 0.5px;
-    }
-
-    .svc-tier-tag.critical {
-      background: rgba(59, 130, 246, 0.16);
-      color: #93c5fd;
-      border: 1px solid rgba(59, 130, 246, 0.35);
-    }
-
-    .svc-tier-tag.sidecar {
-      background: rgba(148, 163, 184, 0.12);
-      color: #cbd5e1;
-      border: 1px solid rgba(148, 163, 184, 0.25);
-    }
-
-    .svc-desc {
-      font-size: 12px;
-      color: var(--muted);
-    }
-
-    .svc-badges {
-      display: flex;
-      align-items: center;
-      gap: 10px;
-      flex-wrap: wrap;
-    }
-
-    .cb-pill {
-      font-family: var(--mono);
-      font-size: 11px;
-      font-weight: 700;
-      padding: 4px 10px;
-      border-radius: 6px;
-      border: 1px solid var(--border);
-      background: var(--panel-2);
-    }
-
-    .cb-pill.closed {
-      color: #34d399;
-      border-color: rgba(16, 185, 129, 0.35);
-      background: var(--green-bg);
-    }
-
-    .cb-pill.open {
-      color: #f87171;
-      border-color: rgba(239, 68, 68, 0.45);
-      background: var(--red-bg);
-    }
-
-    .status-badge {
-      font-size: 12px;
-      font-weight: 700;
-      padding: 5px 12px;
-      border-radius: 999px;
-      display: inline-flex;
-      align-items: center;
-      gap: 6px;
-    }
-
-    .status-badge.operational {
-      background: var(--green-bg);
-      color: #34d399;
-      border: 1px solid rgba(16, 185, 129, 0.35);
-    }
-
-    .status-badge.outage {
-      background: var(--red-bg);
-      color: #f87171;
-      border: 1px solid rgba(239, 68, 68, 0.45);
-    }
-
-    /* ИКОНИЧНАЯ ШКАЛА UPTIME-ТИКОВ (КАК У GITHUB / CLOUDFLARE STATUS) */
-    .uptime-bars {
-      display: grid;
-      grid-template-columns: repeat(60, 1fr);
-      gap: 3px;
-      height: 26px;
-      align-items: stretch;
-    }
-
-    .u-bar {
-      border-radius: 3px;
-      background: var(--green);
-      opacity: 0.85;
-      transition: transform 0.1s ease, opacity 0.1s ease;
-    }
-
-    .u-bar:hover {
-      opacity: 1;
-      transform: scaleY(1.12);
-    }
-
-    .u-bar.down {
-      background: var(--red);
-    }
-
-    .u-bar.absorbed {
-      background: var(--amber);
-    }
-
-    .svc-footer {
-      display: flex;
-      justify-content: space-between;
-      font-size: 11px;
-      color: var(--muted);
-      font-family: var(--mono);
-    }
-
-    /* НИЖНЯЯ СЕТКА: ПУЛЬТ СТРЕСС-ТЕСТОВ CHAOS И ЖИВОЙ ЖУРНАЛ ИНЦИДЕНТОВ */
-    .bottom-grid {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
       gap: 18px;
     }
 
-    @media (max-width: 860px) {
-      .bottom-grid {
-        grid-template-columns: 1fr;
-      }
+    .nav-item {
+      color: var(--muted);
+      text-decoration: none;
+      font-size: 13px;
+      font-weight: 500;
+      transition: color 0.15s ease;
+      cursor: pointer;
+      background: none;
+      border: none;
     }
 
-    .box-card {
-      background: var(--panel);
-      border: 1px solid var(--border);
-      border-radius: 14px;
-      padding: 20px;
+    .nav-item:hover,
+    .nav-item.active {
+      color: var(--foreground);
     }
 
-    .box-title {
-      font-size: 14px;
-      font-weight: 700;
-      margin-bottom: 12px;
+    .nav-right {
       display: flex;
-      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .search-wrapper {
+      position: relative;
+      display: flex;
       align-items: center;
     }
 
-    .chaos-actions {
+    .search-input {
+      background: var(--surface-elevated);
+      border: 1px solid var(--border);
+      color: var(--foreground);
+      font-size: 12.5px;
+      border-radius: 10px;
+      padding: 7px 12px 7px 32px;
+      width: 220px;
+      outline: none;
+      transition: border-color 0.15s ease;
+    }
+
+    .search-input::placeholder {
+      color: var(--muted-subtle);
+    }
+
+    .search-input:focus {
+      border-color: var(--border-focus);
+    }
+
+    .search-icon {
+      position: absolute;
+      left: 10px;
+      width: 14px;
+      height: 14px;
+      color: var(--muted-subtle);
+      pointer-events: none;
+    }
+
+    /* SHADCN PILL BUTTONS */
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 7px;
+      font-family: var(--font-sans);
+      font-size: 13px;
+      font-weight: 500;
+      line-height: 1;
+      padding: 9px 16px;
+      border-radius: var(--radius-pill);
+      cursor: pointer;
+      text-decoration: none;
+      transition: all 0.15s ease;
+      border: 1px solid transparent;
+      white-space: nowrap;
+    }
+
+    .btn-primary {
+      background: var(--primary);
+      color: var(--primary-foreground);
+      font-weight: 600;
+    }
+
+    .btn-primary:hover {
+      background: #e4e4e7;
+    }
+
+    .btn-secondary {
+      background: var(--secondary);
+      color: var(--secondary-foreground);
+      border-color: var(--border);
+    }
+
+    .btn-secondary:hover {
+      background: var(--surface-hover);
+      border-color: var(--border-focus);
+    }
+
+    .btn-outline {
+      background: transparent;
+      color: var(--foreground-secondary);
+      border-color: var(--border);
+    }
+
+    .btn-outline:hover {
+      background: var(--surface-elevated);
+      color: var(--foreground);
+    }
+
+    .btn-sm {
+      font-size: 12px;
+      padding: 6px 12px;
+    }
+
+    .btn-full {
+      width: 100%;
+      padding: 11px 18px;
+    }
+
+    /* HERO HEADER SECTION */
+    .page-wrapper {
+      max-width: 1340px;
+      margin: 0 auto;
+      padding: 44px 28px 80px;
+    }
+
+    .hero {
+      text-align: center;
+      max-width: 680px;
+      margin: 0 auto 44px;
+    }
+
+    .hero-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      background: var(--surface-elevated);
+      border: 1px solid var(--border);
+      padding: 5px 14px;
+      border-radius: var(--radius-pill);
+      font-size: 12px;
+      font-weight: 500;
+      color: var(--foreground-secondary);
+      margin-bottom: 18px;
+    }
+
+    .status-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--emerald);
+      box-shadow: 0 0 10px var(--emerald);
+    }
+
+    .status-dot.degraded {
+      background: var(--amber);
+      box-shadow: 0 0 10px var(--amber);
+    }
+
+    .hero-title {
+      font-size: 42px;
+      font-weight: 700;
+      letter-spacing: -0.035em;
+      line-height: 1.12;
+      color: var(--foreground);
+      margin-bottom: 14px;
+    }
+
+    .hero-subtitle {
+      font-size: 15px;
+      line-height: 1.6;
+      color: var(--muted);
+      margin-bottom: 24px;
+    }
+
+    .hero-actions {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+
+    /* BENTO GRID LAYOUT (SHADCN SHOWCASE ARCHITECTURE) */
+    .bento-grid {
+      display: grid;
+      grid-template-columns: repeat(12, 1fr);
+      gap: 18px;
+      align-items: start;
+    }
+
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-card);
+      padding: 24px;
+      box-shadow: 0 10px 30px -15px rgba(0, 0, 0, 0.7);
+    }
+
+    .col-7 {
+      grid-column: span 7;
+    }
+
+    .col-5 {
+      grid-column: span 5;
+    }
+
+    .col-4 {
+      grid-column: span 4;
+    }
+
+    .col-8 {
+      grid-column: span 8;
+    }
+
+    .col-12 {
+      grid-column: span 12;
+    }
+
+    @media (max-width: 1100px) {
+      .col-7, .col-5, .col-4, .col-8 {
+        grid-column: span 12;
+      }
+    }
+
+    .card-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      margin-bottom: 20px;
+      gap: 12px;
+    }
+
+    .card-title {
+      font-size: 17px;
+      font-weight: 600;
+      letter-spacing: -0.02em;
+      color: var(--foreground);
+    }
+
+    .card-description {
+      font-size: 13px;
+      color: var(--muted);
+      margin-top: 4px;
+      line-height: 1.45;
+    }
+
+    /* BADGES */
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 11.5px;
+      font-weight: 600;
+      padding: 4px 10px;
+      border-radius: var(--radius-pill);
+      border: 1px solid var(--border);
+      background: var(--surface-elevated);
+      color: var(--foreground-secondary);
+      font-family: var(--font-sans);
+    }
+
+    .badge-white {
+      background: var(--foreground);
+      color: var(--background);
+      border-color: var(--foreground);
+    }
+
+    .badge-emerald {
+      background: var(--emerald-soft);
+      color: #34d399;
+      border-color: rgba(16, 185, 129, 0.28);
+    }
+
+    .badge-amber {
+      background: var(--amber-soft);
+      color: #fbbf24;
+      border-color: rgba(245, 158, 11, 0.3);
+    }
+
+    .badge-rose {
+      background: var(--rose-soft);
+      color: #fb7185;
+      border-color: rgba(244, 63, 94, 0.3);
+    }
+
+    /* SERVICE DIRECTORY LIST INSIDE CARD */
+    .service-list {
       display: flex;
       flex-direction: column;
+      gap: 12px;
+    }
+
+    .service-item {
+      background: var(--surface-elevated);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-inner);
+      padding: 16px 18px;
+      transition: border-color 0.15s ease;
+    }
+
+    .service-item:hover {
+      border-color: var(--border-focus);
+    }
+
+    .service-row-top {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 12px;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+
+    .service-name-group {
+      display: flex;
+      align-items: center;
       gap: 10px;
     }
 
-    .incident-log {
-      font-family: var(--mono);
-      font-size: 12px;
-      background: #060911;
-      border: 1px solid var(--border);
-      border-radius: 10px;
-      padding: 12px;
-      height: 230px;
-      overflow-y: auto;
+    .service-title {
+      font-size: 14px;
+      font-weight: 600;
+      color: var(--foreground);
+      letter-spacing: -0.01em;
+    }
+
+    .service-meta-tag {
+      font-family: var(--font-mono);
+      font-size: 11px;
+      color: var(--muted-subtle);
+      background: rgba(255, 255, 255, 0.03);
+      padding: 2px 8px;
+      border-radius: 6px;
+      border: 1px solid var(--border-subtle);
+    }
+
+    .service-subtitle {
+      font-size: 12.5px;
+      color: var(--muted);
+      margin-bottom: 12px;
+    }
+
+    /* SHADCN MONOCHROME + ACCENT UPTIME BARS (48 TICKS) */
+    .uptime-strip {
+      display: grid;
+      grid-template-columns: repeat(48, 1fr);
+      gap: 3px;
+      height: 22px;
+      align-items: stretch;
+    }
+
+    .tick {
+      border-radius: 3px;
+      background: #27272a;
+      transition: all 0.15s ease;
+    }
+
+    .tick.up {
+      background: #e4e4e7;
+      opacity: 0.85;
+    }
+
+    .tick.up.recent {
+      background: var(--emerald);
+      opacity: 1;
+    }
+
+    .tick.down {
+      background: var(--rose);
+      opacity: 1;
+    }
+
+    .tick:hover {
+      transform: scaleY(1.15);
+      opacity: 1;
+    }
+
+    .service-row-footer {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-top: 8px;
+      font-size: 11px;
+      color: var(--muted-subtle);
+      font-family: var(--font-mono);
+    }
+
+    /* SHADCN BAR CHART CARD (LIKE "CONTRIBUTION HISTORY" IN SCREENSHOT) */
+    .bar-chart-stage {
+      height: 165px;
+      display: grid;
+      grid-template-columns: repeat(6, 1fr);
+      gap: 12px;
+      align-items: end;
+      padding: 18px 6px 8px;
+      margin-bottom: 8px;
+    }
+
+    .bar-col {
       display: flex;
       flex-direction: column;
+      align-items: center;
       gap: 8px;
+      height: 100%;
+      justify-content: flex-end;
     }
 
-    .inc-item {
-      padding: 6px 8px;
-      border-radius: 6px;
-      background: rgba(30, 41, 59, 0.45);
-      border-left: 3px solid var(--green);
-      line-height: 1.4;
+    .bar-pill {
+      width: 100%;
+      border-radius: 10px 10px 6px 6px;
+      background: #2e2e33;
+      transition: height 0.35s cubic-bezier(0.16, 1, 0.3, 1), background 0.2s ease;
+      min-height: 24px;
     }
 
-    .inc-item.warn {
-      border-left-color: var(--amber);
+    .bar-pill.highlight {
+      background: #e4e4e7;
     }
 
-    .inc-item.err {
-      border-left-color: var(--red);
+    .bar-label {
+      font-size: 11px;
+      color: var(--muted-subtle);
+      font-family: var(--font-mono);
+    }
+
+    .subcard-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+      margin: 16px 0 18px;
+    }
+
+    .subcard {
+      background: var(--surface-elevated);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-inner);
+      padding: 14px;
+    }
+
+    .subcard-kicker {
+      font-size: 10px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: var(--muted-subtle);
+    }
+
+    .subcard-val {
+      font-size: 17px;
+      font-weight: 700;
+      color: var(--foreground);
+      margin-top: 5px;
+      letter-spacing: -0.02em;
+    }
+
+    .subcard-sub {
+      font-size: 11.5px;
+      color: var(--muted);
+      margin-top: 2px;
+    }
+
+    /* SHADCN AREA SPARKLINE CARD (LIKE "ANALYTICS" IN SCREENSHOT) */
+    .metric-big-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-top: 6px;
+    }
+
+    .metric-big-val {
+      font-size: 26px;
+      font-weight: 700;
+      letter-spacing: -0.03em;
+      font-family: var(--font-sans);
+    }
+
+    .sparkline-box {
+      margin-top: 16px;
+      height: 92px;
+      width: 100%;
+      overflow: hidden;
+      border-radius: 12px;
+    }
+
+    /* SHADCN SWITCH CONTROLS (RESILIENCE & FAULT ISOLATION PANEL) */
+    .control-list {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      margin-bottom: 18px;
+    }
+
+    .control-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 13px 16px;
+      background: var(--surface-elevated);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-inner);
+      gap: 12px;
+    }
+
+    .control-title {
+      font-size: 13.5px;
+      font-weight: 600;
+      color: var(--foreground);
+    }
+
+    .control-desc {
+      font-size: 12px;
+      color: var(--muted);
+      margin-top: 2px;
+    }
+
+    .shadcn-switch {
+      position: relative;
+      width: 42px;
+      height: 24px;
+      border-radius: var(--radius-pill);
+      background: #27272a;
+      border: 1px solid #3f3f46;
+      cursor: pointer;
+      transition: background 0.18s ease, border-color 0.18s ease;
+      flex-shrink: 0;
+      padding: 0;
+    }
+
+    .shadcn-switch.checked {
+      background: var(--foreground);
+      border-color: var(--foreground);
+    }
+
+    .shadcn-switch-thumb {
+      position: absolute;
+      top: 2px;
+      left: 2px;
+      width: 18px;
+      height: 18px;
+      border-radius: 50%;
+      background: var(--foreground);
+      transition: transform 0.18s cubic-bezier(0.16, 1, 0.3, 1), background 0.18s ease;
+    }
+
+    .shadcn-switch.checked .shadcn-switch-thumb {
+      transform: translateX(18px);
+      background: var(--background);
+    }
+
+    /* INCIDENT & AUDIT TIMELINE */
+    .timeline-list {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      max-height: 290px;
+      overflow-y: auto;
+    }
+
+    .timeline-item {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 12px 14px;
+      background: var(--surface-elevated);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      font-size: 12.5px;
+    }
+
+    .timeline-msg {
+      color: var(--foreground-secondary);
+      line-height: 1.45;
+    }
+
+    .timeline-time {
+      font-family: var(--font-mono);
+      font-size: 11px;
+      color: var(--muted-subtle);
+      white-space: nowrap;
+    }
+
+    .sr-only {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      padding: 0;
+      margin: -1px;
+      overflow: hidden;
+      clip: rect(0, 0, 0, 0);
+      white-space: nowrap;
+      border: 0;
     }
   </style>
 </head>
 <body>
-  <div class="container">
-    <!-- ВЕРХНЯЯ ШАПКА -->
-    <header class="topbar">
-      <div class="brand">
-        <div class="brand-logo">🛡️</div>
-        <div>
-          <div class="brand-title">CryptoX Enterprise — System Status &amp; NOC</div>
-          <div class="brand-sub">Zero-Trust Rust Microservice Cluster • Bulkhead &amp; 3-State Circuit Breakers</div>
-        </div>
-      </div>
-      <div class="nav-links">
-        <a class="btn" href="/readyz" target="_blank">📄 JSON /readyz</a>
-        <a class="btn" href="/metrics" target="_blank">📈 Prometheus /metrics</a>
-        <a class="btn primary" href="/">💬 Открыть Мессенджер</a>
-      </div>
-    </header>
+  <!-- TOP NAVBAR (SHADCN DESIGN SYSTEM LAYOUT) -->
+  <header class="navbar">
+    <div class="nav-left">
+      <a href="/status" class="brand-link">
+        <span class="brand-mark">CX</span>
+        <span>CryptoX Platform</span>
+      </a>
+      <nav class="nav-menu" aria-label="Навигация">
+        <a href="/status" class="nav-item active">Status</a>
+        <a href="/" class="nav-item">Messenger</a>
+        <a href="/readyz" target="_blank" class="nav-item">Readiness</a>
+        <a href="/metrics" target="_blank" class="nav-item">Prometheus</a>
+      </nav>
+    </div>
 
-    <!-- ГЛАВНЫЙ БАННЕР СТАТУСА ПЛАТФОРМЫ -->
-    <section class="global-banner" id="globalBanner">
-      <div class="banner-left">
-        <div class="pulse-dot"></div>
-        <div>
-          <div class="banner-headline" id="bannerHeadline">Все системы работают в штатном режиме (All Systems Operational)</div>
-          <div class="banner-desc" id="bannerDesc">
-            Все 6 микросервисов и зашифрованный дисковый контур redb (AES-256-GCM) доступны. Все предохранители в состоянии CLOSED.
+    <div class="nav-right">
+      <div class="search-wrapper">
+        <svg class="search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <circle cx="11" cy="11" r="8"></circle>
+          <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+        </svg>
+        <label for="serviceFilterInput" class="sr-only">Фильтр компонентов инфраструктуры</label>
+        <input
+          id="serviceFilterInput"
+          class="search-input"
+          type="text"
+          aria-label="Фильтр компонентов инфраструктуры"
+          placeholder="Filter components..."
+          oninput="applyComponentFilter()"
+        />
+      </div>
+      <a href="/" class="btn btn-primary btn-sm">Open Messenger →</a>
+    </div>
+  </header>
+
+  <main class="page-wrapper">
+    <!-- HERO SECTION -->
+    <section class="hero">
+      <div class="hero-pill" id="heroStatusPill">
+        <span class="status-dot" id="heroStatusDot"></span>
+        <span id="heroStatusText">All Systems Operational — 99.99% SLA</span>
+      </div>
+      <h1 class="hero-title">System Status &amp; Telemetry</h1>
+      <p class="hero-subtitle" id="heroSubtitle">
+        Real-time availability, Zero-Trust RPC mesh health, and autonomous circuit breaker telemetry across all production CryptoX microservices.
+      </p>
+      <div class="hero-actions">
+        <button class="btn btn-primary" onclick="sendHotpathProbeMessage()">
+          Verify E2EE Hot-Path
+        </button>
+        <a href="/metrics" target="_blank" class="btn btn-secondary">
+          View Prometheus Metrics
+        </a>
+        <a href="/readyz" target="_blank" class="btn btn-outline">
+          Inspect JSON /readyz
+        </a>
+      </div>
+    </section>
+
+    <!-- BENTO GRID (SHADCN PRODUCTION COMPONENTS) -->
+    <section class="bento-grid">
+      <!-- LEFT 7-COL CARD: CORE INFRASTRUCTURE DIRECTORY & UPTIME BARS -->
+      <div class="card col-7">
+        <div class="card-header">
+          <div>
+            <h2 class="card-title">Core Infrastructure Components</h2>
+            <p class="card-description">
+              Live 60-second heartbeat windows and 3-state circuit breaker states per service compartment.
+            </p>
+          </div>
+          <span class="badge badge-emerald" id="overallBadge">6 / 6 Operational</span>
+        </div>
+
+        <div class="service-list" id="servicesContainer"></div>
+      </div>
+
+      <!-- RIGHT 5-COL STACK: SHADCN BAR CHART + AREA ANALYTICS + RESILIENCE SWITCHES -->
+      <div class="col-5" style="display:flex; flex-direction:column; gap:18px;">
+        <!-- CARD 2: THROUGHPUT & STORAGE ACTIVITY (SHADCN ROUNDED BAR CHART) -->
+        <div class="card">
+          <div class="card-header" style="margin-bottom:8px;">
+            <div>
+              <h2 class="card-title">Throughput &amp; Storage Activity</h2>
+              <p class="card-description">Live E2EE packet routing and encrypted redb SSD operations.</p>
+            </div>
+            <span class="badge" id="clockBadge">Live</span>
+          </div>
+
+          <div class="bar-chart-stage" id="barChartStage">
+            <div class="bar-col">
+              <div class="bar-pill" id="bar0" style="height:42%;"></div>
+              <span class="bar-label">Auth</span>
+            </div>
+            <div class="bar-col">
+              <div class="bar-pill" id="bar1" style="height:68%;"></div>
+              <span class="bar-label">Dir</span>
+            </div>
+            <div class="bar-col">
+              <div class="bar-pill" id="bar2" style="height:54%;"></div>
+              <span class="bar-label">L1 RAM</span>
+            </div>
+            <div class="bar-col">
+              <div class="bar-pill" id="bar3" style="height:76%;"></div>
+              <span class="bar-label">L2 SSD</span>
+            </div>
+            <div class="bar-col">
+              <div class="bar-pill highlight" id="bar4" style="height:94%;"></div>
+              <span class="bar-label">HotPath</span>
+            </div>
+            <div class="bar-col">
+              <div class="bar-pill" id="bar5" style="height:36%;"></div>
+              <span class="bar-label">Shield</span>
+            </div>
+          </div>
+
+          <div class="subcard-grid">
+            <div class="subcard">
+              <div class="subcard-kicker">E2EE Hot-Path Routed</div>
+              <div class="subcard-val" id="metricHotpathCount">0 packets</div>
+              <div class="subcard-sub">XChaCha20-Poly1305 • 0 drops</div>
+            </div>
+            <div class="subcard">
+              <div class="subcard-kicker">Encrypted Disk (redb)</div>
+              <div class="subcard-val" id="metricDiskCount">0 commits</div>
+              <div class="subcard-sub" id="metricCacheSub">L1 Hits: 0 • AES-256-GCM</div>
+            </div>
+          </div>
+
+          <a href="/metrics" target="_blank" class="btn btn-primary btn-full">
+            View Full Telemetry Report
+          </a>
+        </div>
+
+        <!-- CARD 3: ZERO-TRUST SECURITY ANALYTICS (SHADCN AREA SPARKLINE CARD) -->
+        <div class="card">
+          <div class="card-header" style="margin-bottom:4px;">
+            <div>
+              <h2 class="card-title">Zero-Trust Mesh &amp; Self-Healing</h2>
+              <div class="metric-big-row">
+                <span class="metric-big-val" id="metricShieldTotal">100% Protected</span>
+                <span class="badge badge-white" id="metricHealsBadge">0 Auto-Heals</span>
+              </div>
+            </div>
+            <button class="btn btn-secondary btn-sm" onclick="simulateInternalHackerAttack()">
+              Test Intrusion Shield
+            </button>
+          </div>
+          <p class="card-description" id="metricSecuritySummary">
+            Absorbed sidecar faults: 0 • Blocked internal RPC intrusions: 0
+          </p>
+
+          <div class="sparkline-box">
+            <svg viewBox="0 0 400 90" width="100%" height="100%" preserveAspectRatio="none">
+              <defs>
+                <linearGradient id="shadcnAreaGrad" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stop-color="#fafafa" stop-opacity="0.24" />
+                  <stop offset="100%" stop-color="#fafafa" stop-opacity="0.0" />
+                </linearGradient>
+              </defs>
+              <path
+                id="sparkAreaPath"
+                d="M0,70 C50,62 90,35 140,42 C190,49 230,22 280,28 C330,34 365,16 400,20 L400,90 L0,90 Z"
+                fill="url(#shadcnAreaGrad)"
+              ></path>
+              <path
+                id="sparkLinePath"
+                d="M0,70 C50,62 90,35 140,42 C190,49 230,22 280,28 C330,34 365,16 400,20"
+                fill="none"
+                stroke="#e4e4e7"
+                stroke-width="2"
+              ></path>
+            </svg>
           </div>
         </div>
       </div>
-      <div class="banner-meta">
-        <div id="wsLiveIndicator" style="color:#34d399; font-weight:700;">● LIVE TELEMETRY (1s)</div>
-        <div id="lastUpdatedClock">Обновлено: только что</div>
+
+      <!-- BOTTOM LEFT 6-COL: BULKHEAD FAULT ISOLATION CONTROLS (SHADCN SWITCHES) -->
+      <div class="card col-7">
+        <div class="card-header">
+          <div>
+            <h2 class="card-title">Bulkhead Partition &amp; Circuit Breaker Controls</h2>
+            <p class="card-description">
+              Simulate sidecar container outages to verify that active E2EE chat sessions survive without interruption and self-heal (`OPEN → HALF_OPEN → CLOSED`).
+            </p>
+          </div>
+          <div style="display:flex; gap:8px;">
+            <button class="btn btn-secondary btn-sm" onclick="triggerTripleApocalypse()">
+              Trip All Sidecars
+            </button>
+            <button class="btn btn-primary btn-sm" onclick="healAllServices()">
+              Restore All
+            </button>
+          </div>
+        </div>
+
+        <div class="control-list">
+          <div class="control-row">
+            <div>
+              <div class="control-title">Authentication &amp; Cloud Key Vault (`auth-vault-svc`)</div>
+              <div class="control-desc">Zero-Knowledge Argon2id login &amp; encrypted key vault sync (:50052)</div>
+            </div>
+            <button
+              id="switch-auth"
+              class="shadcn-switch checked"
+              role="switch"
+              aria-checked="true"
+              aria-label="Переключить доступность auth-vault-svc"
+              onclick="toggleServiceSwitch('auth')"
+            >
+              <span class="shadcn-switch-thumb"></span>
+            </button>
+          </div>
+
+          <div class="control-row">
+            <div>
+              <div class="control-title">Employee Directory &amp; Key Transparency (`user-directory-svc`)</div>
+              <div class="control-desc">Prefix search by @username &amp; BLAKE3 hash-chain audit (:50053)</div>
+            </div>
+            <button
+              id="switch-directory"
+              class="shadcn-switch checked"
+              role="switch"
+              aria-checked="true"
+              aria-label="Переключить доступность user-directory-svc"
+              onclick="toggleServiceSwitch('directory')"
+            >
+              <span class="shadcn-switch-thumb"></span>
+            </button>
+          </div>
+
+          <div class="control-row">
+            <div>
+              <div class="control-title">Presence &amp; Read Watermarks (`presence-receipts-svc`)</div>
+              <div class="control-desc">Online heartbeats &amp; coalesced UUIDv7 read states (:50054)</div>
+            </div>
+            <button
+              id="switch-presence"
+              class="shadcn-switch checked"
+              role="switch"
+              aria-checked="true"
+              aria-label="Переключить доступность presence-receipts-svc"
+              onclick="toggleServiceSwitch('presence')"
+            >
+              <span class="shadcn-switch-thumb"></span>
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- BOTTOM RIGHT 5-COL: INCIDENT & SELF-HEALING AUDIT LOG -->
+      <div class="card col-5">
+        <div class="card-header">
+          <div>
+            <h2 class="card-title">System Event &amp; Self-Healing Log</h2>
+            <p class="card-description">Real-time record of circuit transitions and security events.</p>
+          </div>
+          <span class="badge">Audit Trail</span>
+        </div>
+
+        <div class="timeline-list" id="timelineList"></div>
       </div>
     </section>
-
-    <!-- КАРТОЧКИ TELEMETRY & SECURITY -->
-    <section class="kpi-grid">
-      <div class="kpi-card">
-        <div class="kpi-label">Hot-Path E2EE Сообщения</div>
-        <div class="kpi-value" id="kpiHotpathMsgs">0</div>
-        <div class="kpi-sub">Доставлено через messaging-svc (0 потерь)</div>
-      </div>
-      <div class="kpi-card">
-        <div class="kpi-label">Bulkhead: Поглощено сбоев</div>
-        <div class="kpi-value" id="kpiAbsorbed" style="color:#fbbf24;">0</div>
-        <div class="kpi-sub">Сбоев sidecar-сервисов без обрыва чатов</div>
-      </div>
-      <div class="kpi-card">
-        <div class="kpi-label">Zero-Trust: Отражено атак</div>
-        <div class="kpi-value" id="kpiIntrusions" style="color:#34d399;">0</div>
-        <div class="kpi-sub">Вторжений во внутренний RPC и Rate-Limit</div>
-      </div>
-      <div class="kpi-card">
-        <div class="kpi-label">Авто-исцеления (Self-Heals)</div>
-        <div class="kpi-value" id="kpiAutoHeals" style="color:#60a5fa;">0</div>
-        <div class="kpi-sub">Переходов OPEN → HALF_OPEN → CLOSED</div>
-      </div>
-      <div class="kpi-card">
-        <div class="kpi-label">Диск redb (AES-256-GCM)</div>
-        <div class="kpi-value" id="kpiStorageOps">0 / 0</div>
-        <div class="kpi-sub">L1 RAM Hits / Записей на SSD</div>
-      </div>
-    </section>
-
-    <!-- СПИСОК МИКРОСЕРВИСОВ И ИХ СОСТОЯНИЕ -->
-    <div class="section-header">
-      <div class="section-title">Статус микросервисов и предохранителей (Circuit Breakers)</div>
-      <div style="font-size:12px; color:var(--muted); font-family:var(--mono);">
-        Шкала реального времени (последние 60 тиков опроса кластера)
-      </div>
-    </div>
-
-    <section class="services-card" id="servicesList"></section>
-
-    <!-- ПУЛЬТ УПРАВЛЕНИЯ АВАРИЯМИ (CHAOS ENGINEERING) И ЖУРНАЛ ИНЦИДЕНТОВ -->
-    <section class="bottom-grid">
-      <div class="box-card">
-        <div class="box-title">
-          <span>⚡ Интерактивный полигон аварий и атак (Chaos &amp; Security Drill)</span>
-        </div>
-        <p style="font-size:12px; color:var(--muted); margin-bottom:14px; line-height:1.45;">
-          Отключайте второстепенные сервисы или запускайте симуляцию атаки прямо здесь — наблюдайте, как размыкаются предохранители (<b>OPEN</b>), а критический контур переписки (<b>Hot-Path</b>) продолжает доставлять E2EE сообщения!
-        </p>
-        <div class="chaos-actions">
-          <button class="btn danger" onclick="triggerTripleApocalypse()">
-            🔥 Тройной Апокалипсис: Уронить ВСЕ 3 второстепенных сервиса (Auth + Directory + Presence)
-          </button>
-          <button class="btn success" onclick="healAllServices()">
-            💚 Авто-исцеление кластера: Поднять все упавшие сервисы (OPEN → HALF_OPEN → CLOSED)
-          </button>
-          <button class="btn primary" onclick="sendHotpathProbeMessage()">
-            💬 Проверить выживаемость чатов: Отправить E2EE-сообщение Алиса → Боб через Hot-Path
-          </button>
-          <button class="btn" onclick="simulateInternalHackerAttack()">
-            🕵️ Симулировать хакерскую атаку на внутренний TCP RPC-порт (Zero-Trust Intrusion)
-          </button>
-        </div>
-      </div>
-
-      <div class="box-card">
-        <div class="box-title">
-          <span>📋 Живой журнал инцидентов и автоматики (SRE Incident Feed)</span>
-          <span style="font-size:11px; color:var(--muted); font-family:var(--mono);">Real-Time</span>
-        </div>
-        <div class="incident-log" id="incidentLog"></div>
-      </div>
-    </section>
-  </div>
+  </main>
 
   <script>
-    const HISTORY_LEN = 60;
+    const TICK_COUNT = 48;
     const serviceHistories = {};
-    const prevServiceStates = {};
+    const prevOperationalMap = {};
+    let currentServicesState = { auth: true, directory: true, presence: true };
+    let filterQuery = "";
 
-    function addIncident(text, level = "ok") {
-      const box = document.getElementById("incidentLog");
-      const now = new Date().toLocaleTimeString("ru-RU", { hour12: false });
-      const div = document.createElement("div");
-      div.className = "inc-item" + (level === "warn" ? " warn" : level === "err" ? " err" : "");
-      div.textContent = `[${now}] ${text}`;
-      box.prepend(div);
-      while (box.children.length > 40) {
-        box.removeChild(box.lastChild);
+    function appendTimelineEvent(message) {
+      const list = document.getElementById("timelineList");
+      const time = new Date().toLocaleTimeString("ru-RU", { hour12: false });
+      const item = document.createElement("div");
+      item.className = "timeline-item";
+      item.innerHTML = `
+        <span class="timeline-msg">${message}</span>
+        <span class="timeline-time">${time}</span>
+      `;
+      list.prepend(item);
+      while (list.children.length > 25) {
+        list.removeChild(list.lastChild);
       }
+    }
+
+    function applyComponentFilter() {
+      const input = document.getElementById("serviceFilterInput");
+      filterQuery = (input ? input.value : "").trim().toLowerCase();
+      fetchStatusOverview();
     }
 
     async function fetchStatusOverview() {
@@ -603,132 +999,145 @@
         const res = await fetch("/api/status/overview");
         if (!res.ok) return;
         const data = await res.json();
-        renderStatusDashboard(data);
-      } catch (e) {
-        console.error("Status poll error:", e);
+        renderProductionDashboard(data);
+      } catch (err) {
+        console.error("Failed to fetch status overview:", err);
       }
     }
 
-    function renderStatusDashboard(data) {
-      document.getElementById("lastUpdatedClock").textContent =
-        "Обновлено: " + new Date().toLocaleTimeString("ru-RU", { hour12: false });
+    function renderProductionDashboard(data) {
+      const nowTime = new Date().toLocaleTimeString("ru-RU", { hour12: false });
+      document.getElementById("clockBadge").textContent = "Updated " + nowTime;
 
-      document.getElementById("kpiHotpathMsgs").textContent = data.metrics.hotpath_messages_routed;
-      document.getElementById("kpiAbsorbed").textContent = data.metrics.absorbed_sidecar_failures;
-      document.getElementById("kpiIntrusions").textContent =
-        data.metrics.zero_trust_intrusions_blocked + data.metrics.rate_limited_requests_blocked;
-      document.getElementById("kpiAutoHeals").textContent = data.metrics.total_circuit_auto_heals;
-      document.getElementById("kpiStorageOps").textContent =
-        `${data.metrics.storage_l1_hits} / ${data.metrics.storage_records_written}`;
+      const m = data.metrics;
+      document.getElementById("metricHotpathCount").textContent = `${m.hotpath_messages_routed} packets`;
+      document.getElementById("metricDiskCount").textContent = `${m.storage_records_written} records`;
+      document.getElementById("metricCacheSub").textContent =
+        `L1 Hits: ${m.storage_l1_hits} • L2 Reads: ${m.storage_l2_reads}`;
 
-      const banner = document.getElementById("globalBanner");
-      const headline = document.getElementById("bannerHeadline");
-      const desc = document.getElementById("bannerDesc");
+      const totalBlocked = m.zero_trust_intrusions_blocked + m.rate_limited_requests_blocked;
+      document.getElementById("metricHealsBadge").textContent = `${m.total_circuit_auto_heals} Auto-Heals`;
+      document.getElementById("metricSecuritySummary").textContent =
+        `Bulkhead absorbed faults: ${m.absorbed_sidecar_failures} • Blocked RPC intrusions: ${totalBlocked}`;
+
+      // Animate rounded bar chart proportionally
+      const h2 = Math.min(95, 35 + (m.storage_l1_hits % 60));
+      const h3 = Math.min(95, 45 + (m.storage_records_written % 50));
+      const h4 = Math.min(100, 75 + ((m.hotpath_messages_routed * 7) % 25));
+      const h5 = Math.min(95, 30 + ((totalBlocked + m.absorbed_sidecar_failures) * 12) % 65);
+      document.getElementById("bar2").style.height = `${h2}%`;
+      document.getElementById("bar3").style.height = `${h3}%`;
+      document.getElementById("bar4").style.height = `${h4}%`;
+      document.getElementById("bar5").style.height = `${h5}%`;
+
+      const dot = document.getElementById("heroStatusDot");
+      const heroText = document.getElementById("heroStatusText");
+      const overallBadge = document.getElementById("overallBadge");
+
+      const totalCount = data.services.length;
+      const upCount = data.services.filter((s) => s.operational).length;
+      overallBadge.textContent = `${upCount} / ${totalCount} Operational`;
 
       if (data.overall_status === "OPERATIONAL") {
-        banner.className = "global-banner";
-        headline.textContent = "🟢 Все системы работают в штатном режиме (All Systems Operational)";
-        desc.textContent =
-          "Все 6 микросервисов и зашифрованный дисковый контур redb (AES-256-GCM) доступны. Все предохранители в состоянии CLOSED.";
+        dot.className = "status-dot";
+        heroText.textContent = "All Systems Operational — 99.99% Uptime SLA";
+        overallBadge.className = "badge badge-emerald";
       } else {
-        banner.className = "global-banner degraded";
-        headline.textContent =
-          "🟡 Частичная авария второстепенных сервисов — ЧАТЫ РАБОТАЮТ НА 100% (Bulkhead Active)";
-        desc.textContent =
-          "Один или несколько sidecar-сервисов отключены (Circuit Breaker: OPEN). Критический контур (edge-gateway ↔ messaging-svc) продолжает доставлять E2EE сообщения без задержек.";
+        dot.className = "status-dot degraded";
+        heroText.textContent = "Partial Sidecar Degradation — E2EE Hot-Path 100% Operational";
+        overallBadge.className = "badge badge-amber";
       }
 
-      const container = document.getElementById("servicesList");
+      const container = document.getElementById("servicesContainer");
       container.innerHTML = "";
 
       for (const svc of data.services) {
         if (!serviceHistories[svc.id]) {
-          serviceHistories[svc.id] = Array(HISTORY_LEN).fill("up");
+          serviceHistories[svc.id] = Array(TICK_COUNT).fill(true);
         }
         const hist = serviceHistories[svc.id];
-        hist.push(svc.operational ? "up" : "down");
-        if (hist.length > HISTORY_LEN) hist.shift();
+        hist.push(svc.operational);
+        if (hist.length > TICK_COUNT) hist.shift();
 
-        if (prevServiceStates[svc.id] !== undefined && prevServiceStates[svc.id] !== svc.operational) {
+        if (prevOperationalMap[svc.id] !== undefined && prevOperationalMap[svc.id] !== svc.operational) {
           if (!svc.operational) {
-            addIncident(
-              `🔴 АВАРИЯ: ${svc.name} перешел в OFFLINE. Предохранитель разомкнут (Circuit Breaker: ${svc.circuit_state}).`,
-              "err"
+            appendTimelineEvent(
+              `Circuit Breaker tripped to OPEN for ${svc.name}. Traffic isolated via Bulkhead.`
             );
           } else {
-            addIncident(
-              `🟢 ВОССТАНОВЛЕНИЕ: ${svc.name} снова в строю! Предохранитель автоматически замкнулся (HALF_OPEN → CLOSED).`,
-              "ok"
+            appendTimelineEvent(
+              `Service ${svc.name} recovered. Circuit Breaker auto-healed (HALF_OPEN → CLOSED).`
             );
           }
         }
-        prevServiceStates[svc.id] = svc.operational;
+        prevOperationalMap[svc.id] = svc.operational;
 
-        const upCount = hist.filter((x) => x === "up").length;
-        const uptimePct = ((upCount / hist.length) * 100).toFixed(1);
+        if (svc.chaos_key) {
+          currentServicesState[svc.chaos_key] = svc.operational;
+          const sw = document.getElementById(`switch-${svc.chaos_key}`);
+          if (sw) {
+            sw.className = svc.operational ? "shadcn-switch checked" : "shadcn-switch";
+            sw.setAttribute("aria-checked", svc.operational ? "true" : "false");
+          }
+        }
 
-        const barsHtml = hist
-          .map(
-            (st, idx) =>
-              `<div class="u-bar ${st === "down" ? "down" : ""}" title="Тик #${idx + 1}: ${
-                st === "up" ? "OPERATIONAL" : "OUTAGE (Circuit OPEN)"
-              }"></div>`
-          )
+        if (
+          filterQuery &&
+          !svc.name.toLowerCase().includes(filterQuery) &&
+          !svc.description.toLowerCase().includes(filterQuery)
+        ) {
+          continue;
+        }
+
+        const upTicks = hist.filter(Boolean).length;
+        const uptimePct = ((upTicks / hist.length) * 100).toFixed(2);
+
+        const ticksHtml = hist
+          .map((isUp, idx) => {
+            const isRecent = idx >= hist.length - 4;
+            const cls = isUp ? (isRecent ? "tick up recent" : "tick up") : "tick down";
+            return `<div class="${cls}" title="${isUp ? "Operational" : "Outage (Circuit OPEN)"}"></div>`;
+          })
           .join("");
 
-        const toggleBtnHtml = svc.can_toggle_chaos
-          ? `<button class="btn ${svc.operational ? "danger" : "success"}" onclick="toggleServiceChaos('${
-              svc.chaos_key
-            }', ${svc.operational})">
-               ${svc.operational ? "💥 Уронить сервис" : "⚡ Включить (Auto-Heal)"}
-             </button>`
-          : `<span class="cb-pill closed">🛡️ ЗАЩИЩЕННЫЙ HOT-PATH</span>`;
+        const badgeClass = svc.operational ? "badge badge-emerald" : "badge badge-rose";
+        const badgeLabel = svc.operational
+          ? `Operational • CB ${svc.circuit_state}`
+          : `Outage • CB ${svc.circuit_state}`;
 
-        const row = document.createElement("div");
-        row.className = "svc-row";
-        row.innerHTML = `
-          <div class="svc-top">
-            <div>
-              <div class="svc-info">
-                <span class="svc-name">${svc.name}</span>
-                <span class="svc-tier-tag ${svc.is_critical_hotpath ? "critical" : "sidecar"}">
-                  ${svc.tier_label}
-                </span>
-              </div>
-              <div class="svc-desc" style="margin-top:4px;">${svc.description} • <span style="font-family:var(--mono); color:#93c5fd;">${svc.protocol}</span></div>
+        const item = document.createElement("div");
+        item.className = "service-item";
+        item.innerHTML = `
+          <div class="service-row-top">
+            <div class="service-name-group">
+              <span class="service-title">${svc.name}</span>
+              <span class="service-meta-tag">${svc.tier_label}</span>
             </div>
-            <div class="svc-badges">
-              <span class="cb-pill ${svc.circuit_state === "CLOSED" ? "closed" : "open"}">
-                CB: ${svc.circuit_state} (trips: ${svc.circuit_trips}, heals: ${svc.circuit_heals})
-              </span>
-              <span class="status-badge ${svc.operational ? "operational" : "outage"}">
-                ${svc.operational ? "● РАБОТАЕТ (OPERATIONAL)" : "✖ ОТКЛЮЧЕН (OUTAGE)"}
-              </span>
-              ${toggleBtnHtml}
-            </div>
+            <span class="${badgeClass}">${badgeLabel}</span>
           </div>
-          <div class="uptime-bars">${barsHtml}</div>
-          <div class="svc-footer">
-            <span>60 секунд назад</span>
-            <span>Uptime окна: ${uptimePct}%</span>
-            <span>Сейчас</span>
+          <div class="service-subtitle">${svc.description}</div>
+          <div class="uptime-strip">${ticksHtml}</div>
+          <div class="service-row-footer">
+            <span>${svc.protocol}</span>
+            <span>Trips: ${svc.circuit_trips} • Auto-Heals: ${svc.circuit_heals} • ${uptimePct}%</span>
           </div>
         `;
-        container.appendChild(row);
+        container.appendChild(item);
       }
     }
 
-    async function toggleServiceChaos(serviceKey, currentlyOperational) {
+    async function toggleServiceSwitch(serviceKey) {
+      const currentlyUp = currentServicesState[serviceKey];
       await fetch("/api/chaos/toggle", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ service: serviceKey, outage: currentlyOperational }),
+        body: JSON.stringify({ service: serviceKey, outage: currentlyUp }),
       });
       await fetchStatusOverview();
     }
 
     async function triggerTripleApocalypse() {
-      addIncident("🔥 ЗАПУСК ТРОЙНОЙ АВАРИИ: Отключаем auth-vault-svc, user-directory-svc и presence-receipts-svc...", "warn");
+      appendTimelineEvent("Initiating multi-service fault drill: tripping Auth, Directory, and Presence sidecars.");
       for (const s of ["auth", "directory", "presence"]) {
         await fetch("/api/chaos/toggle", {
           method: "POST",
@@ -740,7 +1149,7 @@
     }
 
     async function healAllServices() {
-      addIncident("💚 ЗАПУСК ПРОТОКОЛА САМОВОССТАНОВЛЕНИЯ: Подаем питание на все sidecar-сервисы...", "ok");
+      appendTimelineEvent("Restoring power to all sidecar compartments (initiating HALF_OPEN → CLOSED recovery).");
       for (const s of ["auth", "directory", "presence"]) {
         await fetch("/api/chaos/toggle", {
           method: "POST",
@@ -755,12 +1164,9 @@
       const res = await fetch("/api/status/probe-hotpath", { method: "POST" });
       const data = await res.json();
       if (res.ok) {
-        addIncident(
-          `💬 HOT-PATH ДОСТАВКА: Зашифрованный конверт (${data.wire_bytes} байт) доставлен через messaging-svc за < 1 мс! (Поглощено сбоев sidecar: ${data.absorbed_sidecar_failures})`,
-          "ok"
+        appendTimelineEvent(
+          `Hot-Path E2EE verification succeeded (${data.wire_bytes}B frame routed via messaging-svc in < 1ms).`
         );
-      } else {
-        addIncident(`❌ Ошибка Hot-Path: ${JSON.stringify(data)}`, "err");
       }
       await fetchStatusOverview();
     }
@@ -768,14 +1174,13 @@
     async function simulateInternalHackerAttack() {
       const res = await fetch("/api/status/simulate-attack", { method: "POST" });
       const data = await res.json();
-      addIncident(
-        `🛡️ ZERO-TRUST ЩИТ: Заблокирована попытка несанкционированного RPC-вторжения к внутреннему порту микросервиса! Всего отражено: ${data.intrusions_blocked}`,
-        "warn"
+      appendTimelineEvent(
+        `Zero-Trust mesh rejected unauthorized TCP RPC frame (total blocked: ${data.intrusions_blocked}).`
       );
       await fetchStatusOverview();
     }
 
-    addIncident("✅ Панель мониторинга кластера CryptoX подключена к шлюзу edge-gateway.", "ok");
+    appendTimelineEvent("Production status telemetry initialized. Connected to CryptoX Edge Gateway.");
     fetchStatusOverview();
     setInterval(fetchStatusOverview, 1500);
   </script>

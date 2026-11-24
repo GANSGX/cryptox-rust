@@ -86,7 +86,7 @@ async fn test_live_axum_server_e2e_ws_disk_search_chat_cloud_sync_and_chaos() {
 
     let status_html = raw_http_request(addr, "GET", "/status", None).await;
     assert!(status_html.contains("HTTP/1.1 200 OK"));
-    assert!(status_html.contains("System Status &amp; NOC"));
+    assert!(status_html.contains("System Status &amp; Telemetry"));
 
     let status_json = raw_http_request(addr, "GET", "/api/status/overview", None).await;
     assert!(status_json.contains("HTTP/1.1 200 OK"));
