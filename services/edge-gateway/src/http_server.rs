@@ -316,6 +316,7 @@ pub fn build_app_router(state: Arc<LivePrototypeState>) -> Router {
         .route("/api/state", get(api_get_state))
         .route("/api/register", post(api_register_user))
         .route("/api/auth/login", post(api_auth_login))
+        .route("/api/auth/sso", post(api_auth_sso))
         .route("/api/auth/recover-password", post(api_auth_recover_password))
         .route("/api/cloud-sync-new-device", post(api_cloud_sync_new_device))
         .route("/api/search", get(api_search_users))
@@ -626,6 +627,81 @@ async fn api_auth_login(
         Err(e) => (
             StatusCode::UNAUTHORIZED,
             Json(serde_json::json!({ "error": format!("Неверный пароль или аккаунт заблокирован: {e}") })),
+        ),
+    }
+}
+
+#[derive(Deserialize)]
+pub struct AuthSsoReqDto {
+    pub domain: String,
+    pub email: String,
+}
+
+async fn api_auth_sso(
+    State(state): State<Arc<LivePrototypeState>>,
+    Json(req): Json<AuthSsoReqDto>,
+) -> impl IntoResponse {
+    let clean_domain = req.domain.trim().to_ascii_lowercase();
+    let clean_email = req.email.trim().to_ascii_lowercase();
+    if clean_domain.len() < 4 || !clean_domain.contains('.') {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({ "error": "Укажите корпоративный домен (например, company.ru)" })),
+        );
+    }
+    if clean_email.len() < 3 {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({ "error": "Укажите рабочую почту или корпоративный логин" })),
+        );
+    }
+
+    let resolved = state.resolve_identifier(&clean_email);
+    let candidate_uname = resolved
+        .split('@')
+        .next()
+        .unwrap_or(&resolved)
+        .chars()
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || c == '_' {
+                c
+            } else {
+                '_'
+            }
+        })
+        .collect::<String>();
+
+    if let Some(existing) = state.client_enclaves.get(&candidate_uname) {
+        return (
+            StatusCode::OK,
+            Json(serde_json::json!({
+                "username": existing.username,
+                "display_name": existing.display_name,
+                "domain": clean_domain,
+            })),
+        );
+    }
+
+    // JIT-провижининг нового корпоративного сотрудника через SSO контур организации
+    let display = format!("{candidate_uname} ({clean_domain})");
+    match state.onboard_employee_enclave_with_password(&candidate_uname, &display, DEMO_PASSWORD) {
+        Ok((uname, recovery_key)) => {
+            if clean_email.contains('@') {
+                state.email_to_username.insert(clean_email, uname.clone());
+            }
+            (
+                StatusCode::OK,
+                Json(serde_json::json!({
+                    "username": uname,
+                    "display_name": display,
+                    "domain": clean_domain,
+                    "recovery_key": recovery_key,
+                })),
+            )
+        }
+        Err(e) => (
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({ "error": e })),
         ),
     }
 }
