@@ -498,9 +498,14 @@
           </div>
         </div>
 
-        <button class="ghost" onclick="toggleXrayDrawer()" id="xrayBtn">
-          🛡️ Рентген & Chaos
-        </button>
+        <div style="display:flex; gap:8px; align-items:center;">
+          <a href="/status" target="_blank" class="ghost" style="text-decoration:none; padding:7px 12px; border-radius:8px; font-size:12px; border:1px solid var(--border); color:#34d399; font-weight:600;">
+            🟢 Статус Серверов (/status)
+          </a>
+          <button class="ghost" onclick="toggleXrayDrawer()" id="xrayBtn">
+            🛡️ Рентген & Chaos
+          </button>
+        </div>
       </div>
 
       <div class="messages-scroll" id="messagesScroll">

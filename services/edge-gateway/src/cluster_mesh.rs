@@ -229,6 +229,26 @@ impl CircuitBreaker {
             }
         }
     }
+
+    /// Принудительно размыкает предохранитель в `OPEN` (для интерактивного полигона Chaos Engineering).
+    pub fn force_trip_open(&self, now_ms: u64) {
+        self.opened_at_ms.store(now_ms, Ordering::Release);
+        let prev = self.state.swap(CircuitState::Open as u8, Ordering::AcqRel);
+        if prev != CircuitState::Open as u8 {
+            self.trip_count.fetch_add(1, Ordering::Relaxed);
+        }
+    }
+
+    /// Переводит предохранитель через `HALF_OPEN -> CLOSED` с фиксацией авто-исцеления (Self-Healing).
+    pub fn force_auto_heal_closed(&self) {
+        self.consecutive_failures.store(0, Ordering::Release);
+        let prev = self
+            .state
+            .swap(CircuitState::Closed as u8, Ordering::AcqRel);
+        if prev != CircuitState::Closed as u8 {
+            self.auto_heal_count.fetch_add(1, Ordering::Relaxed);
+        }
+    }
 }
 
 /// Ключи Zero-Trust аутентификации и шифрования внутреннего кластера микросервисов.

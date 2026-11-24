@@ -79,10 +79,22 @@ async fn test_live_axum_server_e2e_ws_disk_search_chat_cloud_sync_and_chaos() {
         let _ = axum::serve(listener, app).await;
     });
 
-    // 1. Проверяем отдачу нового продуктового HTML UI
+    // 1. Проверяем отдачу нового продуктового HTML UI и NOC Status Dashboard (`/status`)
     let html_resp = raw_http_request(addr, "GET", "/", None).await;
     assert!(html_resp.contains("HTTP/1.1 200 OK"));
     assert!(html_resp.contains("Вход в CryptoX Enterprise"));
+
+    let status_html = raw_http_request(addr, "GET", "/status", None).await;
+    assert!(status_html.contains("HTTP/1.1 200 OK"));
+    assert!(status_html.contains("System Status &amp; NOC"));
+
+    let status_json = raw_http_request(addr, "GET", "/api/status/overview", None).await;
+    assert!(status_json.contains("HTTP/1.1 200 OK"));
+    assert!(status_json.contains("\"overall_status\":\"OPERATIONAL\""));
+
+    let metrics_resp = raw_http_request(addr, "GET", "/metrics", None).await;
+    assert!(metrics_resp.contains("HTTP/1.1 200 OK"));
+    assert!(metrics_resp.contains("cryptox_circuit_breaker_state"));
 
     // 2. Проверяем живое WebSocket-рукопожатие (`GET /ws` -> `101 Switching Protocols`)
     {

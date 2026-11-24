@@ -37,6 +37,7 @@ use tokio::sync::broadcast;
 use user_directory_svc::UserDirectoryService;
 
 const UI_HTML: &str = include_str!("ui.html");
+const STATUS_UI_HTML: &str = include_str!("status_ui.html");
 const DEMO_PASSWORD: &[u8] = b"CryptoX#Enterprise#2026";
 const DEFAULT_STORAGE_ROOT_KEY: [u8; 32] = [0x6A_u8; 32];
 
@@ -241,10 +242,17 @@ impl LivePrototypeState {
 pub fn build_app_router(state: Arc<LivePrototypeState>) -> Router {
     Router::new()
         .route("/", get(serve_ui))
+        .route("/status", get(serve_status_ui))
         .route("/ws", get(ws_upgrade_handler))
         .route("/healthz", get(api_healthz))
         .route("/readyz", get(api_readyz))
         .route("/metrics", get(api_prometheus_metrics))
+        .route("/api/status/overview", get(api_status_overview))
+        .route("/api/status/probe-hotpath", post(api_status_probe_hotpath))
+        .route(
+            "/api/status/simulate-attack",
+            post(api_status_simulate_attack),
+        )
         .route("/api/state", get(api_get_state))
         .route("/api/register", post(api_register_user))
         .route("/api/cloud-sync-new-device", post(api_cloud_sync_new_device))
@@ -254,6 +262,10 @@ pub fn build_app_router(state: Arc<LivePrototypeState>) -> Router {
         .route("/api/chat/mark-read", post(api_mark_chat_read))
         .route("/api/chaos/toggle", post(api_chaos_toggle))
         .with_state(state)
+}
+
+async fn serve_status_ui() -> Html<&'static str> {
+    Html(STATUS_UI_HTML)
 }
 
 async fn api_healthz() -> impl IntoResponse {
@@ -1081,10 +1093,19 @@ async fn api_chaos_toggle(
     State(state): State<Arc<LivePrototypeState>>,
     Json(req): Json<ChaosToggleReqDto>,
 ) -> impl IntoResponse {
+    let now_ms = LivePrototypeState::now_ms();
     match req.service.as_str() {
         "auth" => {
             state.auth_down.store(req.outage, Ordering::SeqCst);
             state.gateway.auth_service().set_simulated_outage(req.outage);
+            if req.outage {
+                state.gateway.auth_circuit_breaker().force_trip_open(now_ms);
+            } else {
+                state
+                    .gateway
+                    .auth_circuit_breaker()
+                    .force_auto_heal_closed();
+            }
         }
         "directory" => {
             state.directory_down.store(req.outage, Ordering::SeqCst);
@@ -1092,6 +1113,17 @@ async fn api_chaos_toggle(
                 .gateway
                 .directory_service()
                 .set_simulated_outage(req.outage);
+            if req.outage {
+                state
+                    .gateway
+                    .directory_circuit_breaker()
+                    .force_trip_open(now_ms);
+            } else {
+                state
+                    .gateway
+                    .directory_circuit_breaker()
+                    .force_auto_heal_closed();
+            }
         }
         "presence" => {
             state.presence_down.store(req.outage, Ordering::SeqCst);
@@ -1099,6 +1131,17 @@ async fn api_chaos_toggle(
                 .gateway
                 .presence_service()
                 .set_simulated_outage(req.outage);
+            if req.outage {
+                state
+                    .gateway
+                    .presence_circuit_breaker()
+                    .force_trip_open(now_ms);
+            } else {
+                state
+                    .gateway
+                    .presence_circuit_breaker()
+                    .force_auto_heal_closed();
+            }
         }
         _ => {}
     }
@@ -1115,6 +1158,241 @@ async fn api_chaos_toggle(
     (
         StatusCode::OK,
         Json(serde_json::json!({ "service": req.service, "outage": req.outage })),
+    )
+}
+
+async fn api_status_overview(State(state): State<Arc<LivePrototypeState>>) -> impl IntoResponse {
+    let gw = &state.gateway;
+    let auth_down = state.auth_down.load(Ordering::Relaxed);
+    let dir_down = state.directory_down.load(Ordering::Relaxed);
+    let pres_down = state.presence_down.load(Ordering::Relaxed);
+
+    let msg_cb = gw.messaging_circuit_breaker();
+    let auth_cb = gw.auth_circuit_breaker();
+    let dir_cb = gw.directory_circuit_breaker();
+    let pres_cb = gw.presence_circuit_breaker();
+
+    let (l1_hits, l2_reads, disk_commits, records_written) =
+        state.disk_storage.as_ref().map_or((0, 0, 0, 0), |s| {
+            let m = s.metrics();
+            (
+                m.l1_cache_hits,
+                m.l2_disk_reads,
+                m.disk_group_commits,
+                m.disk_records_written,
+            )
+        });
+
+    let total_auto_heals = msg_cb.auto_heal_count()
+        + auth_cb.auto_heal_count()
+        + dir_cb.auto_heal_count()
+        + pres_cb.auto_heal_count();
+
+    let overall_status = if auth_down || dir_down || pres_down {
+        "PARTIAL_SIDECAR_OUTAGE_HOTPATH_OK"
+    } else {
+        "OPERATIONAL"
+    };
+
+    let services = serde_json::json!([
+        {
+            "id": "edge-gateway",
+            "name": "edge-gateway (:8080)",
+            "tier_label": "CRITICAL ENTRY",
+            "is_critical_hotpath": true,
+            "description": "Периметровый шлюз, WebSocket-мультиплексор, AutonomousTokenVerifier и Rate-Limiter",
+            "protocol": "Axum HTTP/1.1 + WebSocket /ws",
+            "operational": true,
+            "circuit_state": "CLOSED",
+            "circuit_trips": 0,
+            "circuit_heals": 0,
+            "can_toggle_chaos": false,
+            "chaos_key": ""
+        },
+        {
+            "id": "messaging-svc",
+            "name": "messaging-svc (:50051)",
+            "tier_label": "HOT-PATH CORE",
+            "is_critical_hotpath": true,
+            "description": "Маршрутизация E2EE конвертов, идемпотентная дедупликация и курсорная история UUIDv7",
+            "protocol": "Zero-Trust TCP RPC (XChaCha20-Poly1305 + Ed25519)",
+            "operational": msg_cb.state() != crate::cluster_mesh::CircuitState::Open,
+            "circuit_state": msg_cb.state().as_str(),
+            "circuit_trips": msg_cb.trip_count(),
+            "circuit_heals": msg_cb.auto_heal_count(),
+            "can_toggle_chaos": false,
+            "chaos_key": ""
+        },
+        {
+            "id": "cryptox-storage",
+            "name": "cryptox-storage (redb SSD)",
+            "tier_label": "ENCRYPTED STORAGE",
+            "is_critical_hotpath": true,
+            "description": "ACID B+Tree хранилище с шифрованием AES-256-GCM и слепым индексом BLAKE3",
+            "protocol": "L1 DashMap RAM + L2 redb AES-256-GCM",
+            "operational": true,
+            "circuit_state": "CLOSED",
+            "circuit_trips": 0,
+            "circuit_heals": 0,
+            "can_toggle_chaos": false,
+            "chaos_key": ""
+        },
+        {
+            "id": "auth-vault-svc",
+            "name": "auth-vault-svc (:50052)",
+            "tier_label": "BULKHEAD SIDECAR",
+            "is_critical_hotpath": false,
+            "description": "Zero-Knowledge регистрация, одноразовые челленджи входа и облачный сейф ключей Argon2id",
+            "protocol": "Zero-Trust TCP RPC • Isolated Bulkhead",
+            "operational": !auth_down,
+            "circuit_state": auth_cb.state().as_str(),
+            "circuit_trips": auth_cb.trip_count(),
+            "circuit_heals": auth_cb.auto_heal_count(),
+            "can_toggle_chaos": true,
+            "chaos_key": "auth"
+        },
+        {
+            "id": "user-directory-svc",
+            "name": "user-directory-svc (:50053)",
+            "tier_label": "BULKHEAD SIDECAR",
+            "is_critical_hotpath": false,
+            "description": "Поиск коллег по @username на 100 000 сотрудников и цепочка Key Transparency BLAKE3",
+            "protocol": "Zero-Trust TCP RPC • Isolated Bulkhead",
+            "operational": !dir_down,
+            "circuit_state": dir_cb.state().as_str(),
+            "circuit_trips": dir_cb.trip_count(),
+            "circuit_heals": dir_cb.auto_heal_count(),
+            "can_toggle_chaos": true,
+            "chaos_key": "directory"
+        },
+        {
+            "id": "presence-receipts-svc",
+            "name": "presence-receipts-svc (:50054)",
+            "tier_label": "BULKHEAD SIDECAR",
+            "is_critical_hotpath": false,
+            "description": "Онлайн-статусы и коалесцирующие галочки прочтения (Discord Read States Architecture)",
+            "protocol": "Zero-Trust TCP RPC • Isolated Bulkhead",
+            "operational": !pres_down,
+            "circuit_state": pres_cb.state().as_str(),
+            "circuit_trips": pres_cb.trip_count(),
+            "circuit_heals": pres_cb.auto_heal_count(),
+            "can_toggle_chaos": true,
+            "chaos_key": "presence"
+        }
+    ]);
+
+    (
+        StatusCode::OK,
+        Json(serde_json::json!({
+            "overall_status": overall_status,
+            "services": services,
+            "metrics": {
+                "hotpath_messages_routed": gw.hotpath_messages_routed(),
+                "absorbed_sidecar_failures": gw.absorbed_sidecar_failures(),
+                "zero_trust_intrusions_blocked": gw.zero_trust_intrusions_blocked(),
+                "rate_limited_requests_blocked": gw.rate_limited_requests_blocked(),
+                "total_circuit_auto_heals": total_auto_heals,
+                "storage_l1_hits": l1_hits,
+                "storage_l2_reads": l2_reads,
+                "storage_disk_commits": disk_commits,
+                "storage_records_written": records_written,
+            }
+        })),
+    )
+}
+
+async fn api_status_probe_hotpath(
+    State(state): State<Arc<LivePrototypeState>>,
+) -> impl IntoResponse {
+    let now_ms = LivePrototypeState::now_ms();
+    let Some(alice) = state.client_enclaves.get("alice_ceo").map(|r| Arc::clone(&*r)) else {
+        return (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({ "error": "alice_ceo enclave not found" })),
+        );
+    };
+    let Some(bob) = state
+        .client_enclaves
+        .get("bob_architect")
+        .map(|r| Arc::clone(&*r))
+    else {
+        return (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({ "error": "bob_architect enclave not found" })),
+        );
+    };
+
+    let Ok(bob_bundle) = bob.identity.export_public_bundle() else {
+        return (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({ "error": "bob bundle export failed" })),
+        );
+    };
+
+    if !alice.sessions.contains_key("bob_architect")
+        && let Ok(sess) = ChatSession::establish_direct(
+            &alice.identity,
+            &bob_bundle,
+            EncryptionPolicy::StrictZeroKnowledge,
+            None,
+        )
+    {
+        alice.sessions.insert("bob_architect".to_string(), sess);
+    }
+
+    let Some(mut sess) = alice.sessions.get_mut("bob_architect") else {
+        return (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({ "error": "session missing" })),
+        );
+    };
+
+    let Ok(env) = sess.encrypt_message(
+        &alice.identity,
+        &XChaCha20Poly1305Provider,
+        b"[NOC Status Probe] Hot-Path E2EE packet verified!",
+    ) else {
+        return (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({ "error": "encrypt failed" })),
+        );
+    };
+
+    let wire = env.to_wire_bytes();
+    let wire_len = wire.len();
+    match state
+        .gateway
+        .handle_send_message_wire(&alice.active_token.to_wire_bytes(), &wire, now_ms)
+    {
+        Ok(_) => {
+            if let Some(storage) = &state.disk_storage {
+                let _ = storage.commit_messages_batch(&[env]);
+            }
+            (
+                StatusCode::OK,
+                Json(serde_json::json!({
+                    "ok": true,
+                    "wire_bytes": wire_len,
+                    "absorbed_sidecar_failures": state.gateway.absorbed_sidecar_failures(),
+                })),
+            )
+        }
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({ "error": e.to_string() })),
+        ),
+    }
+}
+
+async fn api_status_simulate_attack(
+    State(state): State<Arc<LivePrototypeState>>,
+) -> impl IntoResponse {
+    state.gateway.record_zero_trust_intrusion_blocked();
+    (
+        StatusCode::OK,
+        Json(serde_json::json!({
+            "intrusions_blocked": state.gateway.zero_trust_intrusions_blocked(),
+        })),
     )
 }
 
