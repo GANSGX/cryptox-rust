@@ -442,8 +442,10 @@
 
       <div class="divider">или создать новый аккаунт</div>
       <div style="display:flex; flex-direction:column; gap:8px;">
-        <input id="modalRegUsername" placeholder="@username (только латиница, цифры и _, напр. vadim_cto)" />
-        <input id="modalRegDisplay" placeholder="Имя и должность (напр. Вадим CTO)" />
+        <label for="modalRegUsername" style="font-size:11px; color:var(--muted);">Логин сотрудника (@username)</label>
+        <input id="modalRegUsername" aria-label="Логин сотрудника" placeholder="@username (только латиница, цифры и _, напр. vadim_cto)" />
+        <label for="modalRegDisplay" style="font-size:11px; color:var(--muted);">Имя и должность</label>
+        <input id="modalRegDisplay" aria-label="Имя и должность" placeholder="Имя и должность (напр. Вадим CTO)" />
         <button onclick="registerAndLoginFromModal()">Зарегистрироваться и войти</button>
       </div>
     </div>
@@ -476,7 +478,8 @@
       </div>
 
       <div class="search-box">
-        <input id="searchInput" placeholder="🔍 Найти коллегу по @username..." oninput="runDirectorySearch()" />
+        <label for="searchInput" style="position:absolute; width:1px; height:1px; overflow:hidden; clip:rect(0,0,0,0);">Поиск сотрудника по @username</label>
+        <input id="searchInput" aria-label="Поиск сотрудника по @username" placeholder="🔍 Найти коллегу по @username..." oninput="runDirectorySearch()" />
       </div>
 
       <div class="contacts-list" id="contactsList"></div>
@@ -510,7 +513,8 @@
       </div>
 
       <div class="composer-bar" id="composerBar" style="display:none;">
-        <input id="messageInput" placeholder="Напишите сообщение..." oninput="notifyTypingOverWs()" onkeydown="if(event.key==='Enter') sendChatMessage()" />
+        <label for="messageInput" style="position:absolute; width:1px; height:1px; overflow:hidden; clip:rect(0,0,0,0);">Текст сообщения</label>
+        <input id="messageInput" aria-label="Текст сообщения" placeholder="Напишите сообщение..." oninput="notifyTypingOverWs()" onkeydown="if(event.key==='Enter') sendChatMessage()" />
         <button onclick="sendChatMessage()">Отправить</button>
       </div>
     </main>
