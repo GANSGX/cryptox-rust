@@ -18,8 +18,9 @@
 use crate::EdgeGateway;
 use cryptox_core::{CryptoProvider, XChaCha20Poly1305Provider};
 use cryptox_proto::{
-    ChannelHistoryPageProto, ChannelId, EncryptedEnvelope, MessageId, SearchUsersResponse,
-    SendMessageAckProto, SignedSessionToken,
+    ChannelHistoryPageProto, ChannelId, EncryptedEnvelope, InternalRpcRequestProto,
+    InternalRpcResponseProto, MessageId, RpcMethodId, SearchUsersResponse, SendMessageAckProto,
+    SignedSessionToken, ZeroTrustRpcFrameProto,
 };
 use dashmap::DashMap;
 use ed25519_dalek::{Signature, Signer, SigningKey, Verifier, VerifyingKey};
@@ -394,9 +395,42 @@ impl ZeroTrustRpcFrame {
 
         Ok(plaintext.to_vec())
     }
+
+    /// Сериализует фрейм в 100% бинарный Protobuf (`ZeroTrustRpcFrameProto` через `prost`).
+    #[must_use]
+    pub fn to_protobuf_wire(&self) -> Vec<u8> {
+        ZeroTrustRpcFrameProto {
+            request_id: self.request_id.to_vec(),
+            timestamp_ms: self.timestamp_ms,
+            target_service: self.target_service.clone(),
+            nonce: self.nonce.clone(),
+            ciphertext: self.ciphertext.clone(),
+            ed25519_signature: self.ed25519_signature.clone(),
+        }
+        .encode_to_vec()
+    }
+
+    /// Декодирует фрейм из бинарного Protobuf (`ZeroTrustRpcFrameProto` через `prost`).
+    pub fn from_protobuf_wire(bytes: &[u8]) -> Result<Self, RpcMeshError> {
+        let proto = ZeroTrustRpcFrameProto::decode(bytes)
+            .map_err(|_| RpcMeshError::ZeroTrustAuthFailed)?;
+        let request_id: [u8; 16] = proto
+            .request_id
+            .as_slice()
+            .try_into()
+            .map_err(|_| RpcMeshError::ZeroTrustAuthFailed)?;
+        Ok(Self {
+            request_id,
+            timestamp_ms: proto.timestamp_ms,
+            target_service: proto.target_service,
+            nonce: proto.nonce,
+            ciphertext: proto.ciphertext,
+            ed25519_signature: proto.ed25519_signature,
+        })
+    }
 }
 
-/// Внутренние RPC-команды между `edge-gateway` и микросервисами.
+/// Внутренние RPC-команды между `edge-gateway` и микросервисами (сериализуются строго в бинарный Protobuf `InternalRpcRequestProto`).
 #[derive(Clone, Serialize, Deserialize)]
 pub enum InternalRpcCommand {
     /// Запрос к `messaging-svc`: маршрутизация и сохранение `EncryptedEnvelope`.
@@ -431,12 +465,197 @@ pub enum InternalRpcCommand {
     PingHealth,
 }
 
-/// Ответ микросервиса по внутреннему Zero-Trust RPC.
+impl InternalRpcCommand {
+    #[must_use]
+    pub fn to_protobuf_wire(&self) -> Vec<u8> {
+        let proto = match self {
+            Self::PingHealth => InternalRpcRequestProto {
+                method: RpcMethodId::PingHealth as i32,
+                token_wire: Vec::new(),
+                envelope_wire: Vec::new(),
+                channel_id: Vec::new(),
+                message_id_or_cursor: Vec::new(),
+                search_prefix: String::new(),
+                limit: 0,
+                now_ms: 0,
+            },
+            Self::RouteMessage {
+                token_wire,
+                envelope_wire,
+                now_ms,
+            } => InternalRpcRequestProto {
+                method: RpcMethodId::RouteMessage as i32,
+                token_wire: token_wire.clone(),
+                envelope_wire: envelope_wire.clone(),
+                channel_id: Vec::new(),
+                message_id_or_cursor: Vec::new(),
+                search_prefix: String::new(),
+                limit: 0,
+                now_ms: *now_ms,
+            },
+            Self::FetchHistory {
+                token_wire,
+                channel_id_bytes,
+                before_cursor_bytes,
+                limit,
+                now_ms,
+            } => InternalRpcRequestProto {
+                method: RpcMethodId::FetchHistory as i32,
+                token_wire: token_wire.clone(),
+                envelope_wire: Vec::new(),
+                channel_id: channel_id_bytes.to_vec(),
+                message_id_or_cursor: before_cursor_bytes
+                    .map(|c| c.to_vec())
+                    .unwrap_or_default(),
+                search_prefix: String::new(),
+                limit: *limit as u32,
+                now_ms: *now_ms,
+            },
+            Self::SearchDirectory {
+                token_wire,
+                prefix,
+                limit,
+                now_ms,
+            } => InternalRpcRequestProto {
+                method: RpcMethodId::SearchDirectory as i32,
+                token_wire: token_wire.clone(),
+                envelope_wire: Vec::new(),
+                channel_id: Vec::new(),
+                message_id_or_cursor: Vec::new(),
+                search_prefix: prefix.clone(),
+                limit: *limit as u32,
+                now_ms: *now_ms,
+            },
+            Self::PresenceAndReadReceipt {
+                token_wire,
+                channel_id_bytes,
+                message_id_bytes,
+                now_ms,
+            } => InternalRpcRequestProto {
+                method: RpcMethodId::PresenceAndReadReceipt as i32,
+                token_wire: token_wire.clone(),
+                envelope_wire: Vec::new(),
+                channel_id: channel_id_bytes.to_vec(),
+                message_id_or_cursor: message_id_bytes.to_vec(),
+                search_prefix: String::new(),
+                limit: 0,
+                now_ms: *now_ms,
+            },
+        };
+        proto.encode_to_vec()
+    }
+
+    pub fn from_protobuf_wire(bytes: &[u8]) -> Result<Self, RpcMeshError> {
+        let proto = InternalRpcRequestProto::decode(bytes)
+            .map_err(|_| RpcMeshError::ZeroTrustAuthFailed)?;
+        match RpcMethodId::try_from_proto(proto.method) {
+            Some(RpcMethodId::PingHealth) => Ok(Self::PingHealth),
+            Some(RpcMethodId::RouteMessage) => Ok(Self::RouteMessage {
+                token_wire: proto.token_wire,
+                envelope_wire: proto.envelope_wire,
+                now_ms: proto.now_ms,
+            }),
+            Some(RpcMethodId::FetchHistory) => {
+                let channel_id_bytes: [u8; 16] = proto
+                    .channel_id
+                    .as_slice()
+                    .try_into()
+                    .map_err(|_| RpcMeshError::ZeroTrustAuthFailed)?;
+                let before_cursor_bytes = if proto.message_id_or_cursor.is_empty() {
+                    None
+                } else {
+                    Some(
+                        proto
+                            .message_id_or_cursor
+                            .as_slice()
+                            .try_into()
+                            .map_err(|_| RpcMeshError::ZeroTrustAuthFailed)?,
+                    )
+                };
+                Ok(Self::FetchHistory {
+                    token_wire: proto.token_wire,
+                    channel_id_bytes,
+                    before_cursor_bytes,
+                    limit: proto.limit as usize,
+                    now_ms: proto.now_ms,
+                })
+            }
+            Some(RpcMethodId::SearchDirectory) => Ok(Self::SearchDirectory {
+                token_wire: proto.token_wire,
+                prefix: proto.search_prefix,
+                limit: proto.limit as usize,
+                now_ms: proto.now_ms,
+            }),
+            Some(RpcMethodId::PresenceAndReadReceipt) => {
+                let channel_id_bytes: [u8; 16] = proto
+                    .channel_id
+                    .as_slice()
+                    .try_into()
+                    .map_err(|_| RpcMeshError::ZeroTrustAuthFailed)?;
+                let message_id_bytes: [u8; 16] = proto
+                    .message_id_or_cursor
+                    .as_slice()
+                    .try_into()
+                    .map_err(|_| RpcMeshError::ZeroTrustAuthFailed)?;
+                Ok(Self::PresenceAndReadReceipt {
+                    token_wire: proto.token_wire,
+                    channel_id_bytes,
+                    message_id_bytes,
+                    now_ms: proto.now_ms,
+                })
+            }
+            _ => Err(RpcMeshError::ZeroTrustAuthFailed),
+        }
+    }
+}
+
+/// Ответ микросервиса по внутреннему Zero-Trust RPC (сериализуется строго в бинарный Protobuf `InternalRpcResponseProto`).
 #[derive(Clone, Serialize, Deserialize)]
 pub enum InternalRpcResponse {
     OkBytes(Vec<u8>),
     Pong,
     ServiceErr(String),
+}
+
+impl InternalRpcResponse {
+    #[must_use]
+    pub fn to_protobuf_wire(&self) -> Vec<u8> {
+        let proto = match self {
+            Self::OkBytes(b) => InternalRpcResponseProto {
+                ok: true,
+                payload_wire: b.clone(),
+                error_message: String::new(),
+            },
+            Self::Pong => InternalRpcResponseProto {
+                ok: true,
+                payload_wire: Vec::new(),
+                error_message: String::new(),
+            },
+            Self::ServiceErr(err) => InternalRpcResponseProto {
+                ok: false,
+                payload_wire: Vec::new(),
+                error_message: err.clone(),
+            },
+        };
+        proto.encode_to_vec()
+    }
+
+    pub fn from_protobuf_wire(bytes: &[u8]) -> Result<Self, RpcMeshError> {
+        let proto = InternalRpcResponseProto::decode(bytes).map_err(|e| {
+            RpcMeshError::NetworkTransportError {
+                service: "protobuf-decode",
+                reason: e.to_string(),
+            }
+        })?;
+        if !proto.ok {
+            return Ok(Self::ServiceErr(proto.error_message));
+        }
+        if proto.payload_wire.is_empty() {
+            Ok(Self::Pong)
+        } else {
+            Ok(Self::OkBytes(proto.payload_wire))
+        }
+    }
 }
 
 async fn write_length_prefixed_frame(
@@ -603,8 +822,7 @@ impl DistributedRpcCluster {
                         return;
                     };
 
-                    let Ok(rpc_frame) = serde_json::from_slice::<ZeroTrustRpcFrame>(&raw_frame)
-                    else {
+                    let Ok(rpc_frame) = ZeroTrustRpcFrame::from_protobuf_wire(&raw_frame) else {
                         intrusions.fetch_add(1, Ordering::Relaxed);
                         gw.record_zero_trust_intrusion_blocked();
                         return;
@@ -625,7 +843,7 @@ impl DistributedRpcCluster {
                         }
                     };
 
-                    let Ok(cmd) = serde_json::from_slice::<InternalRpcCommand>(&plaintext) else {
+                    let Ok(cmd) = InternalRpcCommand::from_protobuf_wire(&plaintext) else {
                         intrusions.fetch_add(1, Ordering::Relaxed);
                         gw.record_zero_trust_intrusion_blocked();
                         return;
@@ -633,17 +851,13 @@ impl DistributedRpcCluster {
 
                     served.fetch_add(1, Ordering::Relaxed);
                     let resp = Self::execute_command(&gw, cmd);
-                    let Ok(resp_bytes) = serde_json::to_vec(&resp) else {
-                        return;
-                    };
+                    let resp_bytes = resp.to_protobuf_wire();
                     let Ok(resp_frame) =
                         ZeroTrustRpcFrame::seal_frame(&k, service_name, &resp_bytes, verify_now_ms)
                     else {
                         return;
                     };
-                    let Ok(wire) = serde_json::to_vec(&resp_frame) else {
-                        return;
-                    };
+                    let wire = resp_frame.to_protobuf_wire();
                     let _ = write_length_prefixed_frame(&mut stream, &wire).await;
                 });
             }
@@ -781,17 +995,9 @@ impl DistributedRpcCluster {
         cmd: &InternalRpcCommand,
         now_ms: u64,
     ) -> Result<InternalRpcResponse, RpcMeshError> {
-        let cmd_bytes =
-            serde_json::to_vec(cmd).map_err(|e| RpcMeshError::NetworkTransportError {
-                service: service_name,
-                reason: e.to_string(),
-            })?;
+        let cmd_bytes = cmd.to_protobuf_wire();
         let frame = ZeroTrustRpcFrame::seal_frame(&self.keys, service_name, &cmd_bytes, now_ms)?;
-        let wire =
-            serde_json::to_vec(&frame).map_err(|e| RpcMeshError::NetworkTransportError {
-                service: service_name,
-                reason: e.to_string(),
-            })?;
+        let wire = frame.to_protobuf_wire();
 
         let io_fut = async {
             let mut stream = TcpStream::connect(addr).await.map_err(|e| {
@@ -802,20 +1008,9 @@ impl DistributedRpcCluster {
             })?;
             write_length_prefixed_frame(&mut stream, &wire).await?;
             let resp_wire = read_length_prefixed_frame(&mut stream, service_name).await?;
-            let resp_frame: ZeroTrustRpcFrame =
-                serde_json::from_slice(&resp_wire).map_err(|e| {
-                    RpcMeshError::NetworkTransportError {
-                        service: service_name,
-                        reason: e.to_string(),
-                    }
-                })?;
+            let resp_frame = ZeroTrustRpcFrame::from_protobuf_wire(&resp_wire)?;
             let pt = resp_frame.open_and_verify(&self.keys, service_name, now_ms, None)?;
-            serde_json::from_slice::<InternalRpcResponse>(&pt).map_err(|e| {
-                RpcMeshError::NetworkTransportError {
-                    service: service_name,
-                    reason: e.to_string(),
-                }
-            })
+            InternalRpcResponse::from_protobuf_wire(&pt)
         };
 
         timeout(self.rpc_timeout, io_fut)

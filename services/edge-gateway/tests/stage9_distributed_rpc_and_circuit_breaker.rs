@@ -197,11 +197,11 @@ async fn test_1_distributed_multi_port_tcp_cluster_e2ee_routing_and_zero_trust_i
     // 5. ХАКЕРСКАЯ АТАКА №1 НА ВНУТРЕННЮЮ СЕТЬ (VLAN Intrusion):
     // Злоумышленник внутри дата-центра стучится напрямую в TCP-порт `messaging-svc` со своим ключом
     let hacker_keys = ZeroTrustClusterKeys::generate();
-    let cmd_bytes = serde_json::to_vec(&InternalRpcCommand::PingHealth).expect("cmd");
+    let cmd_bytes = InternalRpcCommand::PingHealth.to_protobuf_wire();
     let forged_frame =
         ZeroTrustRpcFrame::seal_frame(&hacker_keys, "messaging-svc", &cmd_bytes, now_ms)
             .expect("seal forged");
-    let forged_wire = serde_json::to_vec(&forged_frame).expect("wire");
+    let forged_wire = forged_frame.to_protobuf_wire();
 
     let mut hacker_stream = TcpStream::connect(cluster.messaging_node.listen_addr)
         .await

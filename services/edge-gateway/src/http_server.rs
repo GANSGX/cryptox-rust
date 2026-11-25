@@ -3,8 +3,12 @@
 //! `user-directory-svc`, `presence-receipts-svc`, `messaging-svc`), клиентскими крипто-анклавами `cryptox-core`
 //! и зашифрованным дисковым хранилищем `cryptox-storage` (`redb` + `AES-256-GCM` + `Blind Index`).
 
-use crate::EdgeGateway;
+use crate::{
+    cluster_mesh::{InternalRpcCommand, InternalRpcResponse},
+    EdgeGateway,
+};
 use axum::{
+    body::Bytes,
     extract::{
         ws::{Message as WsMessage, WebSocket, WebSocketUpgrade},
         Query, State,
@@ -24,6 +28,7 @@ use cryptox_proto::{
 };
 use cryptox_storage::EncryptedStorageEngine;
 use dashmap::DashMap;
+use prost::Message;
 use rand_core::{OsRng, RngCore};
 use serde::{Deserialize, Serialize};
 use std::{
@@ -307,6 +312,7 @@ pub fn build_app_router(state: Arc<LivePrototypeState>) -> Router {
         .route("/healthz", get(api_healthz))
         .route("/readyz", get(api_readyz))
         .route("/metrics", get(api_prometheus_metrics))
+        .route("/rpc/v1/protobuf", post(api_protobuf_rpc))
         .route("/api/status/overview", get(api_status_overview))
         .route("/api/status/probe-hotpath", post(api_status_probe_hotpath))
         .route(
@@ -403,6 +409,115 @@ async fn ws_upgrade_handler(
         .on_upgrade(move |socket| handle_ws_connection(socket, state))
 }
 
+async fn execute_binary_protobuf_rpc(state: &LivePrototypeState, raw_req_bytes: &[u8]) -> Vec<u8> {
+    let Ok(cmd) = InternalRpcCommand::from_protobuf_wire(raw_req_bytes) else {
+        return InternalRpcResponse::ServiceErr("invalid binary protobuf RPC frame".into())
+            .to_protobuf_wire();
+    };
+
+    let resp = match cmd {
+        InternalRpcCommand::PingHealth => InternalRpcResponse::Pong,
+        InternalRpcCommand::RouteMessage {
+            token_wire,
+            envelope_wire,
+            now_ms,
+        } => match state
+            .gateway
+            .handle_send_message_wire(&token_wire, &envelope_wire, now_ms)
+        {
+            Ok(ack_wire) => InternalRpcResponse::OkBytes(ack_wire),
+            Err(e) => InternalRpcResponse::ServiceErr(e.to_string()),
+        },
+        InternalRpcCommand::FetchHistory {
+            token_wire,
+            channel_id_bytes,
+            before_cursor_bytes,
+            limit,
+            now_ms,
+        } => {
+            let Ok(tok) = SignedSessionToken::from_wire_bytes(&token_wire) else {
+                return InternalRpcResponse::ServiceErr("invalid token wire".into())
+                    .to_protobuf_wire();
+            };
+            let Ok(cid) = ChannelId::from_slice(&channel_id_bytes) else {
+                return InternalRpcResponse::ServiceErr("invalid channel_id".into())
+                    .to_protobuf_wire();
+            };
+            let cursor = before_cursor_bytes
+                .as_ref()
+                .and_then(|b| MessageId::from_slice(b).ok());
+            match state
+                .gateway
+                .handle_fetch_history(&tok, cid, cursor, limit, now_ms)
+            {
+                Ok(page) => InternalRpcResponse::OkBytes(page.encode_to_vec()),
+                Err(e) => InternalRpcResponse::ServiceErr(e.to_string()),
+            }
+        }
+        InternalRpcCommand::SearchDirectory {
+            token_wire,
+            prefix,
+            limit,
+            now_ms,
+        } => {
+            let Ok(tok) = SignedSessionToken::from_wire_bytes(&token_wire) else {
+                return InternalRpcResponse::ServiceErr("invalid token wire".into())
+                    .to_protobuf_wire();
+            };
+            match state
+                .gateway
+                .handle_search_users(&tok, &prefix, limit, now_ms)
+            {
+                Ok(res) => InternalRpcResponse::OkBytes(res.encode_to_vec()),
+                Err(e) => InternalRpcResponse::ServiceErr(e.to_string()),
+            }
+        }
+        InternalRpcCommand::PresenceAndReadReceipt {
+            token_wire,
+            channel_id_bytes,
+            message_id_bytes,
+            now_ms,
+        } => {
+            let Ok(tok) = SignedSessionToken::from_wire_bytes(&token_wire) else {
+                return InternalRpcResponse::ServiceErr("invalid token wire".into())
+                    .to_protobuf_wire();
+            };
+            let Ok(cid) = ChannelId::from_slice(&channel_id_bytes) else {
+                return InternalRpcResponse::ServiceErr("invalid channel_id".into())
+                    .to_protobuf_wire();
+            };
+            let Ok(mid) = MessageId::from_slice(&message_id_bytes) else {
+                return InternalRpcResponse::ServiceErr("invalid message_id".into())
+                    .to_protobuf_wire();
+            };
+            let _ = state.gateway.presence_service().heartbeat_online(&tok, now_ms);
+            match state
+                .gateway
+                .presence_service()
+                .record_read_receipt(&tok, cid, mid, now_ms)
+            {
+                Ok(wm) => InternalRpcResponse::OkBytes(wm.last_read_message_id.to_vec()),
+                Err(e) => InternalRpcResponse::ServiceErr(e.to_string()),
+            }
+        }
+    };
+
+    resp.to_protobuf_wire()
+}
+
+/// Нативный бинарный Protobuf RPC эндпоинт (`POST /rpc/v1/protobuf`, `Content-Type: application/x-protobuf`).
+async fn api_protobuf_rpc(
+    State(state): State<Arc<LivePrototypeState>>,
+    body: Bytes,
+) -> impl IntoResponse {
+    let resp_wire = execute_binary_protobuf_rpc(&state, &body).await;
+    (
+        StatusCode::OK,
+        [(axum::http::header::CONTENT_TYPE, "application/x-protobuf")],
+        resp_wire,
+    )
+}
+
 async fn handle_ws_connection(mut socket: WebSocket, state: Arc<LivePrototypeState>) {
     let mut rx = state.ws_event_bus.subscribe();
 
@@ -410,6 +525,12 @@ async fn handle_ws_connection(mut socket: WebSocket, state: Arc<LivePrototypeSta
         tokio::select! {
             incoming = socket.recv() => {
                 match incoming {
+                    Some(Ok(WsMessage::Binary(bin_frame))) => {
+                        let resp_wire = execute_binary_protobuf_rpc(&state, &bin_frame).await;
+                        if socket.send(WsMessage::Binary(resp_wire.into())).await.is_err() {
+                            break;
+                        }
+                    }
                     Some(Ok(WsMessage::Text(text))) => {
                         // Клиент может прислать событие `{"type":"typing","from":"alice_ceo","to":"bob_architect"}`
                         if text.len() <= 512 && text.contains(r#""type":"typing""#) {

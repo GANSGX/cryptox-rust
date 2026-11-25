@@ -641,6 +641,85 @@ pub struct ReadReceiptWatermarkProto {
     pub updated_at_ms: u64,
 }
 
+// ============================================================================
+// БИНАРНЫЙ ПРОТОКОЛ МЕЖСЕРВИСНОГО И КЛИЕНТСКОГО RPC (100% PROTOBUF / PROST)
+// ============================================================================
+
+/// Код операции бинарного Protobuf RPC между шлюзом, клиентом и микросервисами.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, prost::Enumeration)]
+#[repr(i32)]
+pub enum RpcMethodId {
+    Unspecified = 0,
+    PingHealth = 1,
+    RouteMessage = 2,
+    FetchHistory = 3,
+    SearchDirectory = 4,
+    PresenceAndReadReceipt = 5,
+}
+
+impl RpcMethodId {
+    #[must_use]
+    pub const fn try_from_proto(val: i32) -> Option<Self> {
+        match val {
+            1 => Some(Self::PingHealth),
+            2 => Some(Self::RouteMessage),
+            3 => Some(Self::FetchHistory),
+            4 => Some(Self::SearchDirectory),
+            5 => Some(Self::PresenceAndReadReceipt),
+            _ => None,
+        }
+    }
+}
+
+/// Зашифрованный и подписанный бинарный Protobuf-фрейм Zero-Trust RPC между узлами кластера.
+#[derive(Clone, PartialEq, Eq, Message)]
+pub struct ZeroTrustRpcFrameProto {
+    #[prost(bytes = "vec", tag = "1")]
+    pub request_id: Vec<u8>,
+    #[prost(uint64, tag = "2")]
+    pub timestamp_ms: u64,
+    #[prost(string, tag = "3")]
+    pub target_service: String,
+    #[prost(bytes = "vec", tag = "4")]
+    pub nonce: Vec<u8>,
+    #[prost(bytes = "vec", tag = "5")]
+    pub ciphertext: Vec<u8>,
+    #[prost(bytes = "vec", tag = "6")]
+    pub ed25519_signature: Vec<u8>,
+}
+
+/// Бинарный Protobuf-запрос RPC (`InternalRpcRequestProto`).
+#[derive(Clone, PartialEq, Eq, Message)]
+pub struct InternalRpcRequestProto {
+    #[prost(enumeration = "RpcMethodId", tag = "1")]
+    pub method: i32,
+    #[prost(bytes = "vec", tag = "2")]
+    pub token_wire: Vec<u8>,
+    #[prost(bytes = "vec", tag = "3")]
+    pub envelope_wire: Vec<u8>,
+    #[prost(bytes = "vec", tag = "4")]
+    pub channel_id: Vec<u8>,
+    #[prost(bytes = "vec", tag = "5")]
+    pub message_id_or_cursor: Vec<u8>,
+    #[prost(string, tag = "6")]
+    pub search_prefix: String,
+    #[prost(uint32, tag = "7")]
+    pub limit: u32,
+    #[prost(uint64, tag = "8")]
+    pub now_ms: u64,
+}
+
+/// Бинарный Protobuf-ответ RPC (`InternalRpcResponseProto`).
+#[derive(Clone, PartialEq, Eq, Message)]
+pub struct InternalRpcResponseProto {
+    #[prost(bool, tag = "1")]
+    pub ok: bool,
+    #[prost(bytes = "vec", tag = "2")]
+    pub payload_wire: Vec<u8>,
+    #[prost(string, tag = "3")]
+    pub error_message: String,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
