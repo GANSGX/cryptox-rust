@@ -50,7 +50,7 @@ const AVATAR_GRADIENTS = [
 function avatarGradientFor(username: string): string {
   let hash = 0;
   for (let i = 0; i < username.length; i++) {
-    hash = (hash * 31 + username.charCodeAt(i)) | 0;
+    hash = Math.trunc(hash * 31 + (username.codePointAt(i) ?? 0)) % 1000003;
   }
   return AVATAR_GRADIENTS[Math.abs(hash) % AVATAR_GRADIENTS.length];
 }
@@ -58,6 +58,7 @@ function avatarGradientFor(username: string): string {
 export const MessengerWorkspace: React.FC<MessengerWorkspaceProps> = ({
   activeUsername,
   theme,
+  onLogout,
 }) => {
   const isDark = theme === "dark";
 
@@ -140,12 +141,14 @@ export const MessengerWorkspace: React.FC<MessengerWorkspaceProps> = ({
           );
           setDirectoryPeers(others);
           void syncPeerSummaries(others);
+        } else if (resp.error_message.includes("не найден")) {
+          onLogout?.();
         }
       } catch {
         // Игнорируем ошибку сети
       }
     },
-    [syncPeerSummaries]
+    [onLogout, syncPeerSummaries]
   );
 
   // Загрузка и расшифровка истории выбранного личного чата по бинарному Protobuf
