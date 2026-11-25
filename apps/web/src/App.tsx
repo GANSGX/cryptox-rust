@@ -221,17 +221,21 @@ export const App: React.FC = () => {
               offset: 0,
             },
             {
-              clipPath: `circle(${Math.round(maxRadius * 0.36)}px at ${Math.round(x - 32)}px ${Math.round(y + 24)}px)`,
-              offset: 0.34,
+              clipPath: `circle(${Math.round(maxRadius * 0.22)}px at ${Math.round(x - 24)}px ${Math.round(y + 18)}px)`,
+              offset: 0.28,
             },
             {
-              clipPath: `circle(${Math.round(maxRadius * 1.08)}px at ${Math.round(x - 76)}px ${Math.round(y + 58)}px)`,
+              clipPath: `circle(${Math.round(maxRadius * 0.56)}px at ${Math.round(x - 54)}px ${Math.round(y + 42)}px)`,
+              offset: 0.64,
+            },
+            {
+              clipPath: `circle(${Math.round(maxRadius * 1.04)}px at ${Math.round(x - 84)}px ${Math.round(y + 64)}px)`,
               offset: 1,
             },
           ],
           {
-            duration: 760,
-            easing: "cubic-bezier(0.22, 1, 0.36, 1)",
+            duration: 1650,
+            easing: "cubic-bezier(0.4, 0, 0.2, 1)",
             pseudoElement: "::view-transition-new(root)",
           }
         );
