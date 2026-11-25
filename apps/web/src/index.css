@@ -4,9 +4,53 @@
   :root {
     --font-sans: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
     --font-mono: "JetBrains Mono", Consolas, monospace;
+    --tg-doodle-stroke: url(#tg-doodle-stroke-light);
+  }
+
+  html.dark {
+    --tg-doodle-stroke: url(#tg-doodle-stroke-dark);
   }
 
   body {
     font-family: var(--font-sans);
   }
+}
+
+/* ==========================================================================
+   Оптимизированная 120 FPS анимация смены темы каплей (Top-Right -> Bottom-Left)
+   ========================================================================== */
+::view-transition-group(root) {
+  animation-duration: 760ms;
+  animation-timing-function: cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+::view-transition-image-pair(root) {
+  isolation: isolate;
+}
+
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation: none !important;
+  mix-blend-mode: normal !important;
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: none;
+}
+
+::view-transition-old(root) {
+  z-index: 1;
+}
+
+::view-transition-new(root) {
+  z-index: 9999;
+  will-change: clip-path;
+}
+
+/* Мгновенная фиксация новых цветов при создании снапшота View Transition без конфликта с transition-colors */
+html.theme-wave-active,
+html.theme-wave-active *,
+html.theme-wave-active *::before,
+html.theme-wave-active *::after {
+  transition: none !important;
 }

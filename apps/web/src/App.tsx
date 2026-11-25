@@ -24,72 +24,29 @@ import { TelegramPatternWallpapers } from "./components/TelegramPatternWallpaper
 import { MessengerWorkspace } from "./components/MessengerWorkspace";
 import { callClientWireProtobuf, ClientWireOp } from "./lib/protoWire";
 import { cn } from "./lib/utils";
+import cryptoxLogoUrl from "./assets/cryptox-logo.jpg";
 
 type AuthView = "login" | "register" | "recovery-issued" | "recover-password";
 
 type UsernameStatus = "idle" | "checking" | "available" | "taken" | "invalid";
 
 /**
- * Кастомный векторный логотип CryptoX (геометрическая орбитальная эмблема + монограмма),
- * заменяющий лишние текстовые заголовки в шапке формы.
+ * Сгенерированный 3D-логотип CryptoX в шапке формы (без лишних текстовых заголовков).
  */
 const CryptoXBrandLogo: React.FC<{ isDark: boolean }> = ({ isDark }) => (
   <div className="flex flex-col items-center justify-center select-none">
     <div
       className={cn(
-        "relative flex h-14 w-14 items-center justify-center rounded-2xl border transition-colors",
-        isDark
-          ? "border-zinc-800 bg-zinc-900/90 text-zinc-100"
-          : "border-zinc-200/90 bg-zinc-100/80 text-zinc-900"
+        "relative h-16 w-16 overflow-hidden rounded-[18px] border shadow-md",
+        isDark ? "border-zinc-700/80" : "border-zinc-300"
       )}
     >
-      <svg
-        width="32"
-        height="32"
-        viewBox="0 0 36 36"
-        fill="none"
-        xmlns="http://www.w3.org/2000/svg"
-      >
-        {/* Внешний шестиугольный контур крипто-узла */}
-        <path
-          d="M18 3L31 10.5V25.5L18 33L5 25.5V10.5L18 3Z"
-          stroke="currentColor"
-          strokeWidth="2.1"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-        />
-        {/* Внутренние перекрещивающиеся орбиты X */}
-        <path
-          d="M11.5 11.5L24.5 24.5M24.5 11.5L11.5 24.5"
-          stroke="currentColor"
-          strokeWidth="2.4"
-          strokeLinecap="round"
-        />
-        {/* Центральное ядро и спутники */}
-        <circle
-          cx="18"
-          cy="18"
-          r="3.2"
-          fill={isDark ? "#09090b" : "#ffffff"}
-          stroke="currentColor"
-          strokeWidth="2"
-        />
-        <circle cx="18" cy="3" r="1.8" fill="currentColor" />
-        <circle cx="31" cy="10.5" r="1.8" fill="currentColor" />
-        <circle cx="5" cy="25.5" r="1.8" fill="currentColor" />
-      </svg>
-    </div>
-
-    {/* Векторное лого-начертание CRYPTOX без лишних подзаголовков */}
-    <div className="mt-3 flex items-center gap-1.5">
-      <span
-        className={cn(
-          "font-mono text-sm font-bold tracking-[0.26em] uppercase",
-          isDark ? "text-zinc-100" : "text-zinc-900"
-        )}
-      >
-        CRYPTOX
-      </span>
+      <img
+        src={cryptoxLogoUrl}
+        alt="CryptoX"
+        className="h-full w-full object-cover scale-[1.42]"
+        draggable={false}
+      />
     </div>
   </div>
 );
@@ -212,47 +169,78 @@ export const App: React.FC = () => {
     };
   }, [regUsername, view]);
 
-  // Анимация заливки темы каплей из правого верхнего угла в левый нижний
+  // Анимация заливки темы каплей из правого верхнего угла в левый нижний (120 FPS, одинаково контрастно в обе стороны)
   const handleLiquidThemeToggle = (e: React.MouseEvent<HTMLButtonElement>) => {
     const nextTheme = theme === "dark" ? "light" : "dark";
     const rect = e.currentTarget.getBoundingClientRect();
     const x = rect.left + rect.width / 2;
     const y = rect.top + rect.height / 2;
+    // Расстояние от кнопки в правом верхнем углу до левого нижнего угла экрана
     const maxRadius = Math.hypot(
       Math.max(x, window.innerWidth - x),
       Math.max(y, window.innerHeight - y)
     );
 
     const docWithVT = document as Document & {
-      startViewTransition?: (cb: () => void) => { ready: Promise<void> };
+      startViewTransition?: (cb: () => void) => {
+        ready: Promise<void>;
+        finished: Promise<void>;
+      };
     };
+
+    const root = document.documentElement;
 
     if (typeof docWithVT.startViewTransition !== "function") {
       setTheme(nextTheme);
       return;
     }
 
+    // Отключаем внутренние transition-colors на время создания снапшота, чтобы новая тема зафиксировалась за 0 мс
+    root.classList.add("theme-wave-active");
+
     const transition = docWithVT.startViewTransition(() => {
+      if (nextTheme === "dark") {
+        root.classList.add("dark");
+        root.setAttribute("data-theme", "dark");
+      } else {
+        root.classList.remove("dark");
+        root.setAttribute("data-theme", "light");
+      }
+      localStorage.setItem("cryptox_theme", nextTheme);
       flushSync(() => {
         setTheme(nextTheme);
       });
     });
 
-    transition.ready.then(() => {
-      document.documentElement.animate(
-        {
-          clipPath: [
-            `circle(0px at ${x}px ${y}px)`,
-            `circle(${maxRadius}px at ${x}px ${y}px)`,
+    transition.ready
+      .then(() => {
+        document.documentElement.animate(
+          [
+            {
+              clipPath: `circle(0px at ${x}px ${y}px)`,
+              offset: 0,
+            },
+            {
+              clipPath: `circle(${Math.round(maxRadius * 0.36)}px at ${Math.round(x - 32)}px ${Math.round(y + 24)}px)`,
+              offset: 0.34,
+            },
+            {
+              clipPath: `circle(${Math.round(maxRadius * 1.08)}px at ${Math.round(x - 76)}px ${Math.round(y + 58)}px)`,
+              offset: 1,
+            },
           ],
-        },
-        {
-          duration: 720,
-          easing: "cubic-bezier(0.22, 1, 0.36, 1)",
-          pseudoElement: "::view-transition-new(root)",
-        }
-      );
-    });
+          {
+            duration: 760,
+            easing: "cubic-bezier(0.22, 1, 0.36, 1)",
+            pseudoElement: "::view-transition-new(root)",
+          }
+        );
+      })
+      .finally(() => {
+        transition.finished.finally(() => {
+          root.classList.remove("theme-wave-active");
+        });
+      });
   };
 
   const switchAuthView = (next: AuthView) => {
