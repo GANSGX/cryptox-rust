@@ -64,13 +64,10 @@ export const App: React.FC = () => {
     }
     const params = new URLSearchParams(window.location.search);
     const fromQuery = params.get("user");
-    if (fromQuery && fromQuery.trim()) {
-      return fromQuery.trim().replace(/^@/, "").toLowerCase();
+    if (fromQuery && /^[a-zA-Z0-9_.-]{1,32}$/.test(fromQuery.trim())) {
+      return fromQuery.trim().toLowerCase();
     }
-    const fromSession =
-      sessionStorage.getItem("cryptox_active_user") ||
-      localStorage.getItem("cryptox_active_user");
-    return fromSession ? fromSession.trim().toLowerCase() : null;
+    return null;
   });
 
   const [view, setView] = useState<AuthView>("login");
@@ -240,10 +237,16 @@ export const App: React.FC = () => {
           }
         );
       })
-      .finally(() => {
-        transition.finished.finally(() => {
-          root.classList.remove("theme-wave-active");
-        });
+      .catch(() => {
+        root.classList.remove("theme-wave-active");
+      });
+
+    transition.finished
+      .then(() => {
+        root.classList.remove("theme-wave-active");
+      })
+      .catch(() => {
+        root.classList.remove("theme-wave-active");
       });
   };
 
@@ -255,15 +258,11 @@ export const App: React.FC = () => {
 
   const finishAuth = (username: string) => {
     const clean = username.trim().replace(/^@/, "").toLowerCase();
-    sessionStorage.setItem("cryptox_active_user", clean);
-    localStorage.setItem("cryptox_active_user", clean);
     window.history.pushState({}, "", "/?user=" + encodeURIComponent(clean));
     setActiveUser(clean);
   };
 
   const handleLogout = () => {
-    sessionStorage.removeItem("cryptox_active_user");
-    localStorage.removeItem("cryptox_active_user");
     window.history.pushState({}, "", "/auth");
     setActiveUser(null);
     setView("login");

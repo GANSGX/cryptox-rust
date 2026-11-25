@@ -663,11 +663,7 @@ export const MessengerWorkspace: React.FC<MessengerWorkspaceProps> = ({
                       <span
                         className={cn(
                           "truncate font-mono text-[11px]",
-                          isSelected
-                            ? "text-zinc-300"
-                            : isDark
-                              ? "text-zinc-500"
-                              : "text-zinc-500"
+                          isSelected ? "text-zinc-300" : "text-zinc-500"
                         )}
                       >
                         @{peer.username}
@@ -936,12 +932,7 @@ export const MessengerWorkspace: React.FC<MessengerWorkspaceProps> = ({
                 >
                   Нет сообщений
                 </h3>
-                <p
-                  className={cn(
-                    "mt-1 text-xs",
-                    isDark ? "text-zinc-500" : "text-zinc-500"
-                  )}
-                >
+                <p className="mt-1 text-xs text-zinc-500">
                   Начните переписку первым
                 </p>
               </motion.div>
