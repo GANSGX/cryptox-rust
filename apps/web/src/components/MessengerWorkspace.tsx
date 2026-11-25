@@ -400,32 +400,38 @@ export const MessengerWorkspace: React.FC<MessengerWorkspaceProps> = ({
   return (
     <div
       className={cn(
-        "relative flex h-full w-full overflow-hidden select-none",
+        "relative flex h-full w-full overflow-hidden select-none p-3 gap-3",
         isDark ? "bg-[#09090b] text-zinc-100" : "bg-[#f2f2f7] text-zinc-900"
       )}
     >
+      {/* Единый сплошной бесшовный фон на ВЕСЬ экран (под плавающей левой капсулой и правой областью) */}
+      <div
+        className="pointer-events-none fixed inset-0 z-0"
+        style={{
+          backgroundImage: `url(${chatWallpaperMutedUrl})`,
+          backgroundSize: "cover",
+          backgroundRepeat: "no-repeat",
+          backgroundPosition: "center",
+          opacity: isDark ? 0.94 : 0.12,
+          filter: isDark ? "none" : "invert(1)",
+        }}
+      />
+
       {/* =====================================================================
-          ЛЕВАЯ КОЛОНКА ЛИЧНЫХ ЧАТОВ (только заголовок «Чаты», «Поиск» и чаты)
+          ЛЕВАЯ ПЛАВАЮЩАЯ КАПСУЛА-ОСТРОВ (как в Telegram Web на ПК, не прижата к краям)
           ===================================================================== */}
       <aside
         className={cn(
-          "relative z-20 flex h-full w-[360px] shrink-0 flex-col border-r",
+          "relative z-20 flex h-full w-[360px] shrink-0 flex-col overflow-hidden rounded-[24px] border shadow-2xl backdrop-blur-xl",
           isDark
-            ? "border-zinc-800/80 bg-[#0c0c10]"
-            : "border-zinc-200/90 bg-white"
+            ? "border-zinc-800/80 bg-[#15151b]/95"
+            : "border-zinc-200/90 bg-white/95"
         )}
       >
-        {/* Чистая шапка: только «Чаты» по центру */}
-        <div className="flex h-12 shrink-0 items-center justify-center px-4 pt-2">
-          <span className="text-[15px] font-semibold tracking-tight">
-            Чаты
-          </span>
-        </div>
-
-        {/* Строка поиска пользователей */}
-        <div className="shrink-0 px-3 py-2">
+        {/* Верхняя строка поиска внутри плавающего острова */}
+        <div className="shrink-0 px-3 pt-3 pb-2">
           <div className="relative">
-            <Search className="pointer-events-none absolute top-1/2 left-3.5 h-3.5 w-3.5 -translate-y-1/2 text-zinc-500" />
+            <Search className="pointer-events-none absolute top-1/2 left-3.5 h-4 w-4 -translate-y-1/2 text-zinc-400" />
             <input
               type="text"
               value={searchQuery}
@@ -433,9 +439,9 @@ export const MessengerWorkspace: React.FC<MessengerWorkspaceProps> = ({
               placeholder="Поиск"
               aria-label="Поиск"
               className={cn(
-                "h-8 w-full rounded-full border pr-8 pl-9 text-xs outline-none transition-colors",
+                "h-9 w-full rounded-full border pr-8 pl-10 text-xs outline-none transition-colors",
                 isDark
-                  ? "border-zinc-800/80 bg-[#17171e] text-zinc-100 placeholder:text-zinc-500 focus:border-zinc-700"
+                  ? "border-zinc-800/90 bg-[#202028] text-zinc-100 placeholder:text-zinc-400 focus:border-zinc-700"
                   : "border-zinc-200/80 bg-zinc-100 text-zinc-900 placeholder:text-zinc-400 focus:border-zinc-300 focus:bg-white"
               )}
             />
@@ -443,7 +449,7 @@ export const MessengerWorkspace: React.FC<MessengerWorkspaceProps> = ({
               <button
                 type="button"
                 onClick={() => setSearchQuery("")}
-                className="absolute top-1/2 right-2.5 -translate-y-1/2 text-zinc-500 hover:text-zinc-300 cursor-pointer"
+                className="absolute top-1/2 right-3 -translate-y-1/2 text-zinc-400 hover:text-zinc-200 cursor-pointer"
               >
                 <X className="h-3.5 w-3.5" />
               </button>
@@ -614,30 +620,17 @@ export const MessengerWorkspace: React.FC<MessengerWorkspaceProps> = ({
       </aside>
 
       {/* =====================================================================
-          ПРАВАЯ ОБЛАСТЬ ЧАТА (единый сплошной бесшовный фон на весь экран)
+          ПРАВАЯ ОБЛАСТЬ ЧАТА (поверх единого бесшовного фона)
           ===================================================================== */}
-      <main className="relative flex h-full flex-1 flex-col overflow-hidden">
-        {/* Единый сплошной рисунок без секций и границ */}
-        <div
-          className="pointer-events-none absolute inset-0 z-0"
-          style={{
-            backgroundImage: `url(${chatWallpaperMutedUrl})`,
-            backgroundSize: "cover",
-            backgroundRepeat: "no-repeat",
-            backgroundPosition: "center",
-            opacity: isDark ? 0.92 : 0.12,
-            filter: isDark ? "none" : "invert(1)",
-          }}
-        />
-
+      <main className="relative z-10 flex h-full flex-1 flex-col overflow-hidden">
         {!activePeerObj ? (
           <div className="relative z-10 flex flex-1 items-center justify-center p-6">
             <div
               className={cn(
-                "rounded-full border px-5 py-2 text-xs font-medium shadow-lg backdrop-blur-xl",
+                "rounded-full px-4 py-1.5 text-xs font-medium shadow-lg backdrop-blur-md",
                 isDark
-                  ? "border-zinc-800/80 bg-[#14141b]/85 text-zinc-300"
-                  : "border-zinc-200/90 bg-white/90 text-zinc-700"
+                  ? "bg-[#352942]/75 text-purple-100/90"
+                  : "border border-zinc-200/90 bg-white/90 text-zinc-700"
               )}
             >
               Выберите, кому хотели бы написать
