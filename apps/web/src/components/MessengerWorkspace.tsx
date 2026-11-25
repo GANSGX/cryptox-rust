@@ -1006,15 +1006,13 @@ export const MessengerWorkspace: React.FC<MessengerWorkspaceProps> = ({
 
                       {isMine &&
                         (m.is_read_by_peer ? (
-                          <CheckCheck
-                            className="h-3.5 w-3.5 text-emerald-300"
-                            title="Прочитано собеседником"
-                          />
+                          <span title="Прочитано собеседником" className="inline-flex">
+                            <CheckCheck className="h-3.5 w-3.5 text-emerald-300" />
+                          </span>
                         ) : (
-                          <Check
-                            className="h-3.5 w-3.5 opacity-75"
-                            title="Доставлено в B+Tree индекс"
-                          />
+                          <span title="Доставлено в B+Tree индекс" className="inline-flex">
+                            <Check className="h-3.5 w-3.5 opacity-75" />
+                          </span>
                         ))}
                     </div>
 

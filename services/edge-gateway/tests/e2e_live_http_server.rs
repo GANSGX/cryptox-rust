@@ -241,5 +241,89 @@ async fn test_live_axum_server_e2e_ws_disk_search_chat_cloud_sync_and_chaos() {
             ClientWireResponseProto::decode(&resp_buf[split_pos..]).expect("decode binary protobuf");
         assert!(proto_resp.ok, "Protobuf response must be ok");
         assert!(proto_resp.wire_bytes_len > 100, "Must return encrypted envelope wire length");
+
+        // 12. Включаем обратно все 3 сервиса после chaos-теста и проверяем бинарный Protobuf CheckUsername + строгую политику паролей (запрет 11 и 123)
+        for svc in ["auth", "directory", "presence"] {
+            let heal = raw_http_request(
+                addr,
+                "POST",
+                "/api/chaos/toggle",
+                Some(&format!(r#"{{"service":"{svc}","outage":false}}"#)),
+            )
+            .await;
+            assert!(heal.contains("HTTP/1.1 200 OK"));
+        }
+
+        let call_proto = |req: ClientWireRequestProto| async move {
+            let bytes = req.encode_to_vec();
+            let mut s = tokio::net::TcpStream::connect(addr).await.expect("tcp");
+            let h = format!(
+                "POST /rpc/v1/client-wire HTTP/1.1\r\nHost: 127.0.0.1\r\nContent-Type: application/x-protobuf\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+                bytes.len()
+            );
+            s.write_all(h.as_bytes()).await.expect("write h");
+            s.write_all(&bytes).await.expect("write b");
+            let mut buf = Vec::new();
+            s.read_to_end(&mut buf).await.expect("read");
+            let pos = buf.windows(4).position(|w| w == b"\r\n\r\n").expect("sep") + 4;
+            ClientWireResponseProto::decode(&buf[pos..]).expect("decode")
+        };
+
+        // Занятый username отклоняется
+        let taken_check = call_proto(ClientWireRequestProto {
+            op: ClientWireOp::CheckUsername as i32,
+            caller_username: "alice_ceo".to_string(),
+            ..ClientWireRequestProto::default()
+        })
+        .await;
+        assert!(!taken_check.ok);
+
+        // Свободный username подтверждается
+        let free_check = call_proto(ClientWireRequestProto {
+            op: ClientWireOp::CheckUsername as i32,
+            caller_username: "cosmos_user_7".to_string(),
+            ..ClientWireRequestProto::default()
+        })
+        .await;
+        assert!(free_check.ok);
+
+        // Пароль с одинаковыми цифрами подряд (11) отклоняется
+        let repeat_digits_reg = call_proto(ClientWireRequestProto {
+            op: ClientWireOp::Register as i32,
+            caller_username: "cosmos_user_7".to_string(),
+            display_name: "Cosmos".to_string(),
+            email: "cosmos@mail.ru".to_string(),
+            password: "ValidPass#11".to_string(),
+            ..ClientWireRequestProto::default()
+        })
+        .await;
+        assert!(!repeat_digits_reg.ok);
+        assert!(repeat_digits_reg.error_message.contains("одинаковые цифры"));
+
+        // Пароль с идущими подряд цифрами (123) отклоняется
+        let seq_digits_reg = call_proto(ClientWireRequestProto {
+            op: ClientWireOp::Register as i32,
+            caller_username: "cosmos_user_7".to_string(),
+            display_name: "Cosmos".to_string(),
+            email: "cosmos@mail.ru".to_string(),
+            password: "ValidPass#123".to_string(),
+            ..ClientWireRequestProto::default()
+        })
+        .await;
+        assert!(!seq_digits_reg.ok);
+        assert!(seq_digits_reg.error_message.contains("идущие подряд цифры"));
+
+        // Надёжный пароль (8+ символов, A-z, цифра, спецсимвол, без повторов/последовательностей) проходит
+        let valid_reg = call_proto(ClientWireRequestProto {
+            op: ClientWireOp::Register as i32,
+            caller_username: "cosmos_user_7".to_string(),
+            display_name: "Cosmos".to_string(),
+            email: "cosmos@mail.ru".to_string(),
+            password: "ValidPass#907".to_string(),
+            ..ClientWireRequestProto::default()
+        })
+        .await;
+        assert!(valid_reg.ok, "Ожидалась успешная регистрация: {}", valid_reg.error_message);
+        assert!(valid_reg.recovery_key.starts_with("CX-"));
     }
 }
