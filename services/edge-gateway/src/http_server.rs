@@ -22,9 +22,11 @@ use cryptox_core::{
     Argon2Profile, ChatSession, CloudKeyVault, UserIdentity, XChaCha20Poly1305Provider,
 };
 use cryptox_proto::{
-    ChannelId, CipherSuiteId, DeviceId, DirectoryEntryProto, EncryptedVaultBlob, EncryptionPolicy,
-    MessageId, PublicKeyBundle, ReadReceiptWatermarkProto, RegisterUserRequest, SignedSessionToken,
-    TenantId, UserId,
+    ChannelId, CipherSuiteId, ClientDecryptedMessageItemProto, ClientDirectoryPeerProto,
+    ClientWireOp, ClientWireRequestProto, ClientWireResponseProto, ClientWireWsEventProto,
+    DeviceId, DirectoryEntryProto, EncryptedVaultBlob, EncryptionPolicy, MessageId,
+    PublicKeyBundle, ReadReceiptWatermarkProto, RegisterUserRequest, SignedSessionToken, TenantId,
+    UserId,
 };
 use cryptox_storage::EncryptedStorageEngine;
 use dashmap::DashMap;
@@ -87,12 +89,30 @@ pub struct LivePrototypeState {
     pub email_to_username: DashMap<String, String>,
     /// Шина мгновенных WebSocket-событий для всех открытых вкладок/клиентов (`new_message`, `read_receipt`, `typing`).
     pub ws_event_bus: broadcast::Sender<String>,
+    /// Бинарная Protobuf шина мгновенных WebSocket-событий (`ClientWireWsEventProto`).
+    pub ws_proto_bus: broadcast::Sender<Vec<u8>>,
     pub auth_down: AtomicBool,
     pub directory_down: AtomicBool,
     pub presence_down: AtomicBool,
 }
 
 impl LivePrototypeState {
+    pub fn broadcast_proto_ws_event(
+        &self,
+        event_type: &str,
+        sender: &str,
+        recipient: &str,
+        wire_bytes_len: u32,
+    ) {
+        let ev = ClientWireWsEventProto {
+            event_type: event_type.to_string(),
+            sender: sender.to_string(),
+            recipient: recipient.to_string(),
+            wire_bytes_len,
+            timestamp_ms: Self::now_ms(),
+        };
+        let _ = self.ws_proto_bus.send(ev.encode_to_vec());
+    }
     #[must_use]
     pub fn resolve_identifier(&self, raw: &str) -> String {
         let trimmed = raw.trim().to_ascii_lowercase();
@@ -126,6 +146,7 @@ impl LivePrototypeState {
     ) -> Arc<Self> {
         let tenant_id = TenantId::new_v7();
         let (ws_event_bus, _) = broadcast::channel(4096);
+        let (ws_proto_bus, _) = broadcast::channel(4096);
 
         let state = Arc::new(Self {
             tenant_id,
@@ -134,6 +155,7 @@ impl LivePrototypeState {
             client_enclaves: DashMap::new(),
             email_to_username: DashMap::new(),
             ws_event_bus,
+            ws_proto_bus,
             auth_down: AtomicBool::new(false),
             directory_down: AtomicBool::new(false),
             presence_down: AtomicBool::new(false),
@@ -313,6 +335,7 @@ pub fn build_app_router(state: Arc<LivePrototypeState>) -> Router {
         .route("/readyz", get(api_readyz))
         .route("/metrics", get(api_prometheus_metrics))
         .route("/rpc/v1/protobuf", post(api_protobuf_rpc))
+        .route("/rpc/v1/client-wire", post(api_client_wire_protobuf))
         .route("/api/status/overview", get(api_status_overview))
         .route("/api/status/probe-hotpath", post(api_status_probe_hotpath))
         .route(
@@ -520,25 +543,42 @@ async fn api_protobuf_rpc(
 
 async fn handle_ws_connection(mut socket: WebSocket, state: Arc<LivePrototypeState>) {
     let mut rx = state.ws_event_bus.subscribe();
+    let mut rx_proto = state.ws_proto_bus.subscribe();
 
     loop {
         tokio::select! {
             incoming = socket.recv() => {
                 match incoming {
                     Some(Ok(WsMessage::Binary(bin_frame))) => {
+                        if let Ok(ws_ev) = ClientWireWsEventProto::decode(bin_frame.as_ref())
+                            && ws_ev.event_type == "typing"
+                        {
+                            let _ = state.ws_proto_bus.send(bin_frame.to_vec());
+                            continue;
+                        }
                         let resp_wire = execute_binary_protobuf_rpc(&state, &bin_frame).await;
                         if socket.send(WsMessage::Binary(resp_wire.into())).await.is_err() {
                             break;
                         }
                     }
                     Some(Ok(WsMessage::Text(text))) => {
-                        // Клиент может прислать событие `{"type":"typing","from":"alice_ceo","to":"bob_architect"}`
                         if text.len() <= 512 && text.contains(r#""type":"typing""#) {
                             let _ = state.ws_event_bus.send(text.to_string());
                         }
                     }
                     Some(Ok(WsMessage::Ping(_) | WsMessage::Pong(_))) => {}
                     _ => break,
+                }
+            }
+            outbound_proto = rx_proto.recv() => {
+                match outbound_proto {
+                    Ok(proto_bytes) => {
+                        if socket.send(WsMessage::Binary(proto_bytes.into())).await.is_err() {
+                            break;
+                        }
+                    }
+                    Err(broadcast::error::RecvError::Lagged(_)) => {}
+                    Err(broadcast::error::RecvError::Closed) => break,
                 }
             }
             outbound = rx.recv() => {
@@ -553,6 +593,751 @@ async fn handle_ws_connection(mut socket: WebSocket, state: Arc<LivePrototypeSta
                 }
             }
         }
+    }
+}
+
+/// Единый бинарный Protobuf RPC-интерфейс Клиент <-> Шлюз (`POST /rpc/v1/client-wire`, `Content-Type: application/x-protobuf`).
+async fn api_client_wire_protobuf(
+    State(state): State<Arc<LivePrototypeState>>,
+    body: Bytes,
+) -> impl IntoResponse {
+    let resp = handle_client_wire_proto_inner(&state, &body);
+    (
+        StatusCode::OK,
+        [(axum::http::header::CONTENT_TYPE, "application/x-protobuf")],
+        resp.encode_to_vec(),
+    )
+}
+
+fn proto_err_resp(msg: impl Into<String>) -> ClientWireResponseProto {
+    ClientWireResponseProto {
+        ok: false,
+        error_message: msg.into(),
+        ..ClientWireResponseProto::default()
+    }
+}
+
+fn handle_client_wire_proto_inner(
+    state: &LivePrototypeState,
+    raw_bytes: &[u8],
+) -> ClientWireResponseProto {
+    let Ok(req) = ClientWireRequestProto::decode(raw_bytes) else {
+        return proto_err_resp("Ошибка декодирования бинарного Protobuf пакета");
+    };
+    let now_ms = LivePrototypeState::now_ms();
+
+    match ClientWireOp::try_from_proto(req.op) {
+        Some(ClientWireOp::Login) => {
+            if req.password.is_empty() {
+                return proto_err_resp("Введите пароль от аккаунта");
+            }
+            let norm = state.resolve_identifier(&req.caller_username);
+            let Some(enclave_ref) = state.client_enclaves.get(&norm) else {
+                return proto_err_resp("Аккаунт с таким логином или почтой не найден");
+            };
+            let display_name = enclave_ref.display_name.clone();
+            let dev_num = enclave_ref.device_number;
+            let v_ver = enclave_ref.vault_version.load(Ordering::Relaxed);
+            drop(enclave_ref);
+
+            let Ok(ch) = state
+                .gateway
+                .auth_service()
+                .issue_login_challenge(state.tenant_id, &norm, now_ms)
+            else {
+                return proto_err_resp("Ошибка выпуска крипто-вызова входа");
+            };
+            let Ok(verify_req) = CloudKeyVault::sign_login_challenge(
+                &ch,
+                req.password.as_bytes(),
+                DeviceId::new_v7(),
+            ) else {
+                return proto_err_resp("Ошибка крипто-подписи вызова входа");
+            };
+            match state
+                .gateway
+                .auth_service()
+                .verify_login_and_fetch_vault(&verify_req, now_ms + 1)
+            {
+                Ok(_) => ClientWireResponseProto {
+                    ok: true,
+                    username: norm,
+                    display_name,
+                    device_number: dev_num,
+                    vault_version: v_ver,
+                    ..ClientWireResponseProto::default()
+                },
+                Err(e) => proto_err_resp(format!("Неверный пароль или аккаунт заблокирован: {e}")),
+            }
+        }
+        Some(ClientWireOp::Register) => {
+            let clean_email = req.email.trim().to_ascii_lowercase();
+            if !clean_email.is_empty() && (!clean_email.contains('@') || !clean_email.contains('.'))
+            {
+                return proto_err_resp("Укажите корректный адрес электронной почты");
+            }
+            if !clean_email.is_empty() && state.email_to_username.contains_key(&clean_email) {
+                return proto_err_resp("Аккаунт с такой электронной почтой уже зарегистрирован");
+            }
+            if req.password.len() < 6 {
+                return proto_err_resp("Пароль должен содержать минимум 6 символов");
+            }
+            match state.onboard_employee_enclave_with_password(
+                &req.caller_username,
+                &req.display_name,
+                req.password.as_bytes(),
+            ) {
+                Ok((uname, recovery_key)) => {
+                    if !clean_email.is_empty() {
+                        state.email_to_username.insert(clean_email, uname.clone());
+                    }
+                    state.broadcast_proto_ws_event("directory_updated", &uname, "", 0);
+                    ClientWireResponseProto {
+                        ok: true,
+                        username: uname,
+                        display_name: req.display_name,
+                        recovery_key,
+                        device_number: 1,
+                        vault_version: 1,
+                        ..ClientWireResponseProto::default()
+                    }
+                }
+                Err(e) => proto_err_resp(e),
+            }
+        }
+        Some(ClientWireOp::SsoLogin) => {
+            let clean_domain = req.domain.trim().to_ascii_lowercase();
+            let clean_email = req.email.trim().to_ascii_lowercase();
+            if clean_domain.len() < 4 || !clean_domain.contains('.') {
+                return proto_err_resp("Укажите корпоративный домен (например, company.ru)");
+            }
+            if clean_email.len() < 3 {
+                return proto_err_resp("Укажите рабочую почту или корпоративный логин");
+            }
+            let resolved = state.resolve_identifier(&clean_email);
+            let candidate_uname = resolved
+                .split('@')
+                .next()
+                .unwrap_or(&resolved)
+                .chars()
+                .map(|c| {
+                    if c.is_ascii_alphanumeric() || c == '_' {
+                        c
+                    } else {
+                        '_'
+                    }
+                })
+                .collect::<String>();
+
+            if let Some(existing) = state.client_enclaves.get(&candidate_uname) {
+                return ClientWireResponseProto {
+                    ok: true,
+                    username: existing.username.clone(),
+                    display_name: existing.display_name.clone(),
+                    device_number: existing.device_number,
+                    vault_version: existing.vault_version.load(Ordering::Relaxed),
+                    ..ClientWireResponseProto::default()
+                };
+            }
+
+            let display = format!("{candidate_uname} ({clean_domain})");
+            match state.onboard_employee_enclave_with_password(
+                &candidate_uname,
+                &display,
+                DEMO_PASSWORD,
+            ) {
+                Ok((uname, recovery_key)) => {
+                    if clean_email.contains('@') {
+                        state.email_to_username.insert(clean_email, uname.clone());
+                    }
+                    state.broadcast_proto_ws_event("directory_updated", &uname, "", 0);
+                    ClientWireResponseProto {
+                        ok: true,
+                        username: uname,
+                        display_name: display,
+                        recovery_key,
+                        device_number: 1,
+                        vault_version: 1,
+                        ..ClientWireResponseProto::default()
+                    }
+                }
+                Err(e) => proto_err_resp(e),
+            }
+        }
+        Some(ClientWireOp::RecoverPassword) => {
+            let norm = state.resolve_identifier(&req.caller_username);
+            let clean_rec = req.recovery_key.trim().to_ascii_uppercase();
+            if req.password.trim().len() < 6 {
+                return proto_err_resp("Новый пароль должен содержать минимум 6 символов");
+            }
+            let Some(old_ref) = state.client_enclaves.get(&norm) else {
+                return proto_err_resp("Аккаунт с таким логином или почтой не найден");
+            };
+            let old_enclave = Arc::clone(old_ref.value());
+            drop(old_ref);
+
+            let Ok((recovered_identity, _)) = CloudKeyVault::unlock_from_cloud_blob(
+                &old_enclave.recovery_vault_blob,
+                clean_rec.as_bytes(),
+                DeviceId::new_v7(),
+                EncryptionPolicy::StrictZeroKnowledge,
+                None,
+            ) else {
+                return proto_err_resp(
+                    "Неверный ключ восстановления (отказ дешифрования резервного сейфа)",
+                );
+            };
+
+            let next_ver = old_enclave
+                .vault_version
+                .load(Ordering::SeqCst)
+                .saturating_add(1);
+            let profile = LivePrototypeState::fast_argon_profile();
+            let Ok(new_vault_blob) = CloudKeyVault::seal_to_cloud_blob(
+                &recovered_identity,
+                &[],
+                req.password.as_bytes(),
+                next_ver,
+                profile,
+            ) else {
+                return proto_err_resp("Ошибка перешифрования сейфа");
+            };
+            let Ok(new_auth_vk) = CloudKeyVault::derive_auth_verifying_key(
+                req.password.as_bytes(),
+                &new_vault_blob.argon2_salt,
+                profile,
+            ) else {
+                return proto_err_resp("Ошибка генерации ключа входа");
+            };
+            if let Err(e) = state.gateway.auth_service().rotate_password_and_vault(
+                state.tenant_id,
+                &norm,
+                &new_auth_vk,
+                new_vault_blob.clone(),
+            ) {
+                return proto_err_resp(e.to_string());
+            }
+            if let Some(storage) = &state.disk_storage {
+                let _ = storage.put_vault_blob(&new_vault_blob);
+            }
+            old_enclave.vault_version.store(next_ver, Ordering::SeqCst);
+            ClientWireResponseProto {
+                ok: true,
+                username: norm,
+                display_name: old_enclave.display_name.clone(),
+                device_number: old_enclave.device_number,
+                vault_version: next_ver,
+                ..ClientWireResponseProto::default()
+            }
+        }
+        Some(ClientWireOp::GetState) => {
+            let norm = state.resolve_identifier(&req.caller_username);
+            let mut peers: Vec<ClientDirectoryPeerProto> = state
+                .client_enclaves
+                .iter()
+                .map(|r| ClientDirectoryPeerProto {
+                    username: r.username.clone(),
+                    display_name: r.display_name.clone(),
+                    key_version: 1,
+                    transparency_seq: 1,
+                    ed25519_pub_hex_short: String::new(),
+                    x25519_pub_hex_short: String::new(),
+                    device_number: r.device_number,
+                    vault_version: r.vault_version.load(Ordering::Relaxed),
+                })
+                .collect();
+            peers.sort_by(|a, b| a.username.cmp(&b.username));
+
+            let (dname, dev_num, v_ver) = state
+                .client_enclaves
+                .get(&norm)
+                .map_or((String::new(), 1, 1), |e| {
+                    (
+                        e.display_name.clone(),
+                        e.device_number,
+                        e.vault_version.load(Ordering::Relaxed),
+                    )
+                });
+
+            let (l1_hits, l2_reads, disk_commits, records_written) =
+                state.disk_storage.as_ref().map_or((0, 0, 0, 0), |s| {
+                    let m = s.metrics();
+                    (
+                        m.l1_cache_hits,
+                        m.l2_disk_reads,
+                        m.disk_group_commits,
+                        m.disk_records_written,
+                    )
+                });
+
+            ClientWireResponseProto {
+                ok: true,
+                username: norm,
+                display_name: dname,
+                device_number: dev_num,
+                vault_version: v_ver,
+                storage_l1_hits: l1_hits,
+                storage_l2_reads: l2_reads,
+                storage_disk_commits: disk_commits,
+                storage_records_written: records_written,
+                absorbed_sidecar_failures: state.gateway.absorbed_sidecar_failures(),
+                peers,
+                ..ClientWireResponseProto::default()
+            }
+        }
+        Some(ClientWireOp::SearchDirectory) => {
+            let caller_norm = state.resolve_identifier(&req.caller_username);
+            let Some(caller) = state.client_enclaves.get(&caller_norm).map(|r| Arc::clone(&*r))
+            else {
+                return proto_err_resp("Актор не найден");
+            };
+            let prefix = req
+                .search_query
+                .trim()
+                .trim_start_matches('@')
+                .to_ascii_lowercase();
+
+            if !prefix.is_empty()
+                && let Some(storage) = &state.disk_storage
+            {
+                let _ = storage.get_directory_entry_by_username(state.tenant_id, &prefix);
+            }
+
+            let mut peers = Vec::new();
+            let search_prefix = if prefix.is_empty() { "a" } else { &prefix };
+            if prefix.is_empty() {
+                for l in 'a'..='z' {
+                    let s = l.to_string();
+                    if let Ok(resp) = state.gateway.handle_search_users(
+                        &caller.active_token,
+                        &s,
+                        50,
+                        now_ms,
+                    ) {
+                        for entry in resp.entries {
+                            if let Some(bundle) = &entry.public_key_bundle {
+                                caller
+                                    .peer_bundles
+                                    .insert(entry.username.clone(), bundle.clone());
+                                let ed_hex = bytes_to_hex(&bundle.ed25519_verifying_key);
+                                let x_hex = bytes_to_hex(&bundle.x25519_public_key);
+                                peers.push(ClientDirectoryPeerProto {
+                                    username: entry.username,
+                                    display_name: entry.display_name,
+                                    key_version: bundle.key_version,
+                                    transparency_seq: entry.transparency_seq,
+                                    ed25519_pub_hex_short: ed_hex[..16.min(ed_hex.len())]
+                                        .to_string(),
+                                    x25519_pub_hex_short: x_hex[..16.min(x_hex.len())].to_string(),
+                                    device_number: 1,
+                                    vault_version: 1,
+                                });
+                            }
+                        }
+                    }
+                }
+            } else {
+                match state.gateway.handle_search_users(
+                    &caller.active_token,
+                    search_prefix,
+                    50,
+                    now_ms,
+                ) {
+                    Ok(resp) => {
+                        for entry in resp.entries {
+                            if let Some(bundle) = &entry.public_key_bundle {
+                                caller
+                                    .peer_bundles
+                                    .insert(entry.username.clone(), bundle.clone());
+                                let ed_hex = bytes_to_hex(&bundle.ed25519_verifying_key);
+                                let x_hex = bytes_to_hex(&bundle.x25519_public_key);
+                                peers.push(ClientDirectoryPeerProto {
+                                    username: entry.username,
+                                    display_name: entry.display_name,
+                                    key_version: bundle.key_version,
+                                    transparency_seq: entry.transparency_seq,
+                                    ed25519_pub_hex_short: ed_hex[..16.min(ed_hex.len())]
+                                        .to_string(),
+                                    x25519_pub_hex_short: x_hex[..16.min(x_hex.len())].to_string(),
+                                    device_number: 1,
+                                    vault_version: 1,
+                                });
+                            }
+                        }
+                    }
+                    Err(e) => return proto_err_resp(e.to_string()),
+                }
+            }
+
+            ClientWireResponseProto {
+                ok: true,
+                peers,
+                ..ClientWireResponseProto::default()
+            }
+        }
+        Some(ClientWireOp::SendChatMessage) => {
+            let sender_norm = state.resolve_identifier(&req.caller_username);
+            let recipient_norm = state.resolve_identifier(&req.peer_username);
+
+            let Some(sender) = state.client_enclaves.get(&sender_norm).map(|r| Arc::clone(&*r))
+            else {
+                return proto_err_resp("Отправитель не найден");
+            };
+
+            let peer_bundle = if let Some(b) = sender.peer_bundles.get(&recipient_norm) {
+                b.value().clone()
+            } else if let Some(storage) = &state.disk_storage
+                && let Ok(Some(entry)) =
+                    storage.get_directory_entry_by_username(state.tenant_id, &recipient_norm)
+                && let Some(b) = &entry.public_key_bundle
+            {
+                sender
+                    .peer_bundles
+                    .insert(recipient_norm.clone(), b.clone());
+                b.clone()
+            } else if let Some(recip_enclave) = state.client_enclaves.get(&recipient_norm) {
+                let Ok(b) = recip_enclave.identity.export_public_bundle() else {
+                    return proto_err_resp("Ошибка экспорта ключей получателя");
+                };
+                sender
+                    .peer_bundles
+                    .insert(recipient_norm.clone(), b.clone());
+                b
+            } else {
+                return proto_err_resp("Получатель не найден");
+            };
+
+            if !sender.sessions.contains_key(&recipient_norm) {
+                let Ok(new_session) = ChatSession::establish_direct(
+                    &sender.identity,
+                    &peer_bundle,
+                    EncryptionPolicy::StrictZeroKnowledge,
+                    None,
+                ) else {
+                    return proto_err_resp("Не удалось установить X25519 E2EE сессию");
+                };
+                sender.sessions.insert(recipient_norm.clone(), new_session);
+            }
+
+            let Some(mut session_ref) = sender.sessions.get_mut(&recipient_norm) else {
+                return proto_err_resp("Сессия чата не найдена");
+            };
+            let Ok(envelope) = session_ref.encrypt_message(
+                &sender.identity,
+                &XChaCha20Poly1305Provider,
+                req.plaintext_message.as_bytes(),
+            ) else {
+                return proto_err_resp("Ошибка шифрования XChaCha20-Poly1305");
+            };
+            drop(session_ref);
+
+            let token_wire = sender.active_token.to_wire_bytes();
+            let env_wire = envelope.to_wire_bytes();
+            let wire_len = env_wire.len() as u32;
+
+            if let Err(e) = state
+                .gateway
+                .handle_send_message_wire(&token_wire, &env_wire, now_ms)
+            {
+                return proto_err_resp(e.to_string());
+            }
+
+            if let Some(storage) = &state.disk_storage {
+                let _ = storage.commit_messages_batch(std::slice::from_ref(&envelope));
+            }
+
+            // Авто-обновление облачного сейфа ключей
+            if let Some(sess_ref) = sender.sessions.get(&recipient_norm) {
+                let next_ver = sender
+                    .vault_version
+                    .fetch_add(1, Ordering::SeqCst)
+                    .saturating_add(1);
+                if let Ok(updated_blob) = CloudKeyVault::seal_to_cloud_blob(
+                    &sender.identity,
+                    &[sess_ref.value()],
+                    DEMO_PASSWORD,
+                    next_ver,
+                    LivePrototypeState::fast_argon_profile(),
+                ) {
+                    if !state.auth_down.load(Ordering::Relaxed) {
+                        let _ = state.gateway.auth_service().push_vault_update(
+                            &sender.active_token,
+                            updated_blob.clone(),
+                            now_ms + 1,
+                        );
+                    }
+                    if let Some(storage) = &state.disk_storage {
+                        let _ = storage.put_vault_blob(&updated_blob);
+                    }
+                }
+            }
+
+            state.broadcast_proto_ws_event("new_message", &sender_norm, &recipient_norm, wire_len);
+            let _ = state.ws_event_bus.send(
+                serde_json::json!({
+                    "type": "new_message",
+                    "sender": sender_norm,
+                    "recipient": recipient_norm,
+                    "wire_bytes": wire_len,
+                })
+                .to_string(),
+            );
+
+            ClientWireResponseProto {
+                ok: true,
+                wire_bytes_len: wire_len,
+                ratchet_step: envelope.ratchet_step,
+                ..ClientWireResponseProto::default()
+            }
+        }
+        Some(ClientWireOp::FetchChatHistory) => {
+            let caller_norm = state.resolve_identifier(&req.caller_username);
+            let peer_norm = state.resolve_identifier(&req.peer_username);
+
+            let Some(caller) = state.client_enclaves.get(&caller_norm).map(|r| Arc::clone(&*r))
+            else {
+                return proto_err_resp("Актор не найден");
+            };
+
+            let peer_bundle = if let Some(b) = caller.peer_bundles.get(&peer_norm) {
+                b.value().clone()
+            } else if let Some(storage) = &state.disk_storage
+                && let Ok(Some(entry)) =
+                    storage.get_directory_entry_by_username(state.tenant_id, &peer_norm)
+                && let Some(b) = &entry.public_key_bundle
+            {
+                caller.peer_bundles.insert(peer_norm.clone(), b.clone());
+                b.clone()
+            } else if let Some(peer_enclave) = state.client_enclaves.get(&peer_norm) {
+                let Ok(b) = peer_enclave.identity.export_public_bundle() else {
+                    return proto_err_resp("Ошибка экспорта ключей собеседника");
+                };
+                caller.peer_bundles.insert(peer_norm.clone(), b.clone());
+                b
+            } else {
+                return proto_err_resp("Собеседник не найден");
+            };
+
+            if !caller.sessions.contains_key(&peer_norm)
+                && let Ok(new_session) = ChatSession::establish_direct(
+                    &caller.identity,
+                    &peer_bundle,
+                    EncryptionPolicy::StrictZeroKnowledge,
+                    None,
+                )
+            {
+                caller.sessions.insert(peer_norm.clone(), new_session);
+            }
+
+            let Some(session_ref) = caller.sessions.get(&peer_norm) else {
+                return proto_err_resp("Не удалось инициализировать E2EE сессию");
+            };
+            let channel_id = session_ref.channel_id();
+            let peer_user_id = session_ref.peer_user_id();
+
+            let Ok(mut history_page) = state.gateway.handle_fetch_history(
+                &caller.active_token,
+                channel_id,
+                None,
+                50,
+                now_ms,
+            ) else {
+                return proto_err_resp("Ошибка чтения истории чата");
+            };
+
+            if history_page.envelopes.is_empty()
+                && let Some(storage) = &state.disk_storage
+                && let Ok(disk_page) =
+                    storage.fetch_channel_history_from_disk(state.tenant_id, channel_id, None, 50)
+            {
+                history_page = disk_page;
+            }
+
+            let peer_read_watermark_bytes: Option<Vec<u8>> = state
+                .gateway
+                .presence_service()
+                .get_read_watermark(&caller.active_token, channel_id, peer_user_id, now_ms)
+                .ok()
+                .flatten()
+                .or_else(|| {
+                    state.disk_storage.as_ref().and_then(|s| {
+                        s.get_read_watermark(state.tenant_id, channel_id, peer_user_id)
+                            .ok()
+                            .flatten()
+                    })
+                })
+                .map(|wm| wm.last_read_message_id);
+
+            let mut messages = Vec::with_capacity(history_page.envelopes.len());
+            for env in &history_page.envelopes {
+                let decrypted_text = session_ref
+                    .decrypt_historical_message(&caller.identity, &XChaCha20Poly1305Provider, env)
+                    .map(|bytes| String::from_utf8_lossy(&bytes).to_string())
+                    .unwrap_or_else(|e| format!("[Ошибка дешифрования: {e}]"));
+
+                let sender_uid =
+                    UserId::from_slice(&env.sender_user_id).unwrap_or_else(|_| UserId::new_v7());
+                let is_mine = sender_uid == caller.identity.user_id();
+                let sender_uname = if is_mine {
+                    caller.username.clone()
+                } else {
+                    peer_norm.clone()
+                };
+
+                let msg_ts_ms = MessageId::from_slice(&env.message_id)
+                    .map(|m| m.timestamp_ms())
+                    .unwrap_or(now_ms);
+
+                let is_read_by_peer = is_mine
+                    && peer_read_watermark_bytes
+                        .as_ref()
+                        .is_some_and(|wm_bytes| wm_bytes.as_slice() >= env.message_id.as_slice());
+
+                let mid_hex = bytes_to_hex(&env.message_id);
+                let ct_hex = bytes_to_hex(&env.ciphertext);
+                let sig_hex = bytes_to_hex(&env.ed25519_signature);
+
+                messages.push(ClientDecryptedMessageItemProto {
+                    sender_username: sender_uname,
+                    ratchet_step: env.ratchet_step,
+                    message_id_short: mid_hex[..12.min(mid_hex.len())].to_string(),
+                    timestamp_ms: msg_ts_ms,
+                    is_read_by_peer,
+                    decrypted_text,
+                    wire_bytes_len: env.to_wire_bytes().len() as u32,
+                    nonce_hex: bytes_to_hex(&env.nonce),
+                    ciphertext_hex: ct_hex,
+                    signature_hex_short: sig_hex[..24.min(sig_hex.len())].to_string(),
+                });
+            }
+
+            ClientWireResponseProto {
+                ok: true,
+                channel_id_hex: bytes_to_hex(channel_id.as_bytes()),
+                messages,
+                ..ClientWireResponseProto::default()
+            }
+        }
+        Some(ClientWireOp::MarkChatRead) => {
+            let caller_norm = state.resolve_identifier(&req.caller_username);
+            let peer_norm = state.resolve_identifier(&req.peer_username);
+
+            let Some(caller) = state.client_enclaves.get(&caller_norm).map(|r| Arc::clone(&*r))
+            else {
+                return proto_err_resp("Актор не найден");
+            };
+            let Some(peer_enclave) = state.client_enclaves.get(&peer_norm).map(|r| Arc::clone(&*r))
+            else {
+                return proto_err_resp("Собеседник не найден");
+            };
+
+            let channel_id = ChannelId::deterministic_direct(
+                state.tenant_id,
+                caller.identity.user_id(),
+                peer_enclave.identity.user_id(),
+            );
+
+            let mut history_page = state
+                .gateway
+                .handle_fetch_history(&caller.active_token, channel_id, None, 10, now_ms)
+                .unwrap_or(cryptox_proto::ChannelHistoryPageProto {
+                    channel_id: channel_id.to_vec(),
+                    envelopes: Vec::new(),
+                    next_before_cursor: Vec::new(),
+                    has_more: false,
+                });
+
+            if history_page.envelopes.is_empty()
+                && let Some(storage) = &state.disk_storage
+                && let Ok(disk_page) =
+                    storage.fetch_channel_history_from_disk(state.tenant_id, channel_id, None, 10)
+            {
+                history_page = disk_page;
+            }
+
+            if let Some(last_env) = history_page.envelopes.last()
+                && let Ok(last_msg_id) = MessageId::from_slice(&last_env.message_id)
+            {
+                let _ = state.gateway.presence_service().record_read_receipt(
+                    &caller.active_token,
+                    channel_id,
+                    last_msg_id,
+                    now_ms,
+                );
+                if let Some(storage) = &state.disk_storage {
+                    let wm = ReadReceiptWatermarkProto {
+                        tenant_id: state.tenant_id.to_vec(),
+                        channel_id: channel_id.to_vec(),
+                        user_id: caller.identity.user_id().to_vec(),
+                        last_read_message_id: last_msg_id.to_vec(),
+                        updated_at_ms: now_ms,
+                    };
+                    let _ = storage.flush_watermarks_batch(&[wm]);
+                }
+                state.broadcast_proto_ws_event("read_receipt", &caller_norm, &peer_norm, 0);
+            }
+
+            ClientWireResponseProto {
+                ok: true,
+                ..ClientWireResponseProto::default()
+            }
+        }
+        Some(ClientWireOp::CloudSyncNewDevice) => {
+            let norm = state.resolve_identifier(&req.caller_username);
+            let Some(old_ref) = state.client_enclaves.get(&norm) else {
+                return proto_err_resp("Сотрудник не найден");
+            };
+            let old_enclave = Arc::clone(old_ref.value());
+            drop(old_ref);
+
+            let Ok((restored_identity, restored_sessions_vec)) =
+                CloudKeyVault::unlock_from_cloud_blob(
+                    &old_enclave.recovery_vault_blob,
+                    old_enclave.recovery_key.as_bytes(),
+                    DeviceId::new_v7(),
+                    EncryptionPolicy::StrictZeroKnowledge,
+                    None,
+                )
+            else {
+                return proto_err_resp("Не удалось расшифровать CloudKeyVault для нового устройства");
+            };
+
+            let new_sessions_map = DashMap::new();
+            for s in restored_sessions_vec {
+                for item in &old_enclave.sessions {
+                    if item.value().channel_id() == s.channel_id() {
+                        new_sessions_map.insert(item.key().clone(), s);
+                        break;
+                    }
+                }
+            }
+
+            let new_dev_num = old_enclave.device_number.saturating_add(1);
+            let v_ver = old_enclave.vault_version.load(Ordering::Relaxed);
+            let new_enclave = Arc::new(ClientDeviceEnclave {
+                username: old_enclave.username.clone(),
+                display_name: old_enclave.display_name.clone(),
+                identity: restored_identity,
+                active_token: old_enclave.active_token.clone(),
+                device_number: new_dev_num,
+                vault_version: AtomicU64::new(v_ver),
+                recovery_key: old_enclave.recovery_key.clone(),
+                recovery_vault_blob: old_enclave.recovery_vault_blob.clone(),
+                sessions: new_sessions_map,
+                peer_bundles: old_enclave.peer_bundles.clone(),
+            });
+            state.client_enclaves.insert(norm.clone(), new_enclave);
+
+            ClientWireResponseProto {
+                ok: true,
+                username: norm,
+                device_number: new_dev_num,
+                vault_version: v_ver,
+                wire_bytes_len: old_enclave.recovery_vault_blob.to_wire_bytes().len() as u32,
+                ..ClientWireResponseProto::default()
+            }
+        }
+        None | Some(ClientWireOp::Unspecified) => proto_err_resp("Неизвестный код операции Protobuf"),
     }
 }
 

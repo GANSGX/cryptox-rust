@@ -720,6 +720,165 @@ pub struct InternalRpcResponseProto {
     pub error_message: String,
 }
 
+// ============================================================================
+// БИНАРНЫЙ ПРОТОКОЛ КЛИЕНТ <-> ШЛЮЗ (WEB / DESKTOP PROTOBUF WIRE PROTOCOL)
+// ============================================================================
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, prost::Enumeration)]
+#[repr(i32)]
+pub enum ClientWireOp {
+    Unspecified = 0,
+    Login = 1,
+    Register = 2,
+    SsoLogin = 3,
+    RecoverPassword = 4,
+    GetState = 5,
+    SearchDirectory = 6,
+    SendChatMessage = 7,
+    FetchChatHistory = 8,
+    MarkChatRead = 9,
+    CloudSyncNewDevice = 10,
+}
+
+impl ClientWireOp {
+    #[must_use]
+    pub const fn try_from_proto(val: i32) -> Option<Self> {
+        match val {
+            1 => Some(Self::Login),
+            2 => Some(Self::Register),
+            3 => Some(Self::SsoLogin),
+            4 => Some(Self::RecoverPassword),
+            5 => Some(Self::GetState),
+            6 => Some(Self::SearchDirectory),
+            7 => Some(Self::SendChatMessage),
+            8 => Some(Self::FetchChatHistory),
+            9 => Some(Self::MarkChatRead),
+            10 => Some(Self::CloudSyncNewDevice),
+            _ => None,
+        }
+    }
+}
+
+#[derive(Clone, PartialEq, Eq, Message)]
+pub struct ClientWireRequestProto {
+    #[prost(enumeration = "ClientWireOp", tag = "1")]
+    pub op: i32,
+    #[prost(string, tag = "2")]
+    pub caller_username: String,
+    #[prost(string, tag = "3")]
+    pub peer_username: String,
+    #[prost(string, tag = "4")]
+    pub email: String,
+    #[prost(string, tag = "5")]
+    pub display_name: String,
+    #[prost(string, tag = "6")]
+    pub password: String,
+    #[prost(string, tag = "7")]
+    pub recovery_key: String,
+    #[prost(string, tag = "8")]
+    pub domain: String,
+    #[prost(string, tag = "9")]
+    pub search_query: String,
+    #[prost(string, tag = "10")]
+    pub plaintext_message: String,
+}
+
+#[derive(Clone, PartialEq, Eq, Message)]
+pub struct ClientDirectoryPeerProto {
+    #[prost(string, tag = "1")]
+    pub username: String,
+    #[prost(string, tag = "2")]
+    pub display_name: String,
+    #[prost(uint64, tag = "3")]
+    pub key_version: u64,
+    #[prost(uint64, tag = "4")]
+    pub transparency_seq: u64,
+    #[prost(string, tag = "5")]
+    pub ed25519_pub_hex_short: String,
+    #[prost(string, tag = "6")]
+    pub x25519_pub_hex_short: String,
+    #[prost(uint32, tag = "7")]
+    pub device_number: u32,
+    #[prost(uint64, tag = "8")]
+    pub vault_version: u64,
+}
+
+#[derive(Clone, PartialEq, Eq, Message)]
+pub struct ClientDecryptedMessageItemProto {
+    #[prost(string, tag = "1")]
+    pub sender_username: String,
+    #[prost(uint64, tag = "2")]
+    pub ratchet_step: u64,
+    #[prost(string, tag = "3")]
+    pub message_id_short: String,
+    #[prost(uint64, tag = "4")]
+    pub timestamp_ms: u64,
+    #[prost(bool, tag = "5")]
+    pub is_read_by_peer: bool,
+    #[prost(string, tag = "6")]
+    pub decrypted_text: String,
+    #[prost(uint32, tag = "7")]
+    pub wire_bytes_len: u32,
+    #[prost(string, tag = "8")]
+    pub nonce_hex: String,
+    #[prost(string, tag = "9")]
+    pub ciphertext_hex: String,
+    #[prost(string, tag = "10")]
+    pub signature_hex_short: String,
+}
+
+#[derive(Clone, PartialEq, Eq, Message)]
+pub struct ClientWireResponseProto {
+    #[prost(bool, tag = "1")]
+    pub ok: bool,
+    #[prost(string, tag = "2")]
+    pub error_message: String,
+    #[prost(string, tag = "3")]
+    pub username: String,
+    #[prost(string, tag = "4")]
+    pub display_name: String,
+    #[prost(string, tag = "5")]
+    pub recovery_key: String,
+    #[prost(string, tag = "6")]
+    pub channel_id_hex: String,
+    #[prost(uint32, tag = "7")]
+    pub wire_bytes_len: u32,
+    #[prost(uint64, tag = "8")]
+    pub ratchet_step: u64,
+    #[prost(uint32, tag = "9")]
+    pub device_number: u32,
+    #[prost(uint64, tag = "10")]
+    pub vault_version: u64,
+    #[prost(uint64, tag = "11")]
+    pub storage_l1_hits: u64,
+    #[prost(uint64, tag = "12")]
+    pub storage_l2_reads: u64,
+    #[prost(uint64, tag = "13")]
+    pub storage_disk_commits: u64,
+    #[prost(uint64, tag = "14")]
+    pub storage_records_written: u64,
+    #[prost(uint64, tag = "15")]
+    pub absorbed_sidecar_failures: u64,
+    #[prost(message, repeated, tag = "16")]
+    pub peers: Vec<ClientDirectoryPeerProto>,
+    #[prost(message, repeated, tag = "17")]
+    pub messages: Vec<ClientDecryptedMessageItemProto>,
+}
+
+#[derive(Clone, PartialEq, Eq, Message)]
+pub struct ClientWireWsEventProto {
+    #[prost(string, tag = "1")]
+    pub event_type: String,
+    #[prost(string, tag = "2")]
+    pub sender: String,
+    #[prost(string, tag = "3")]
+    pub recipient: String,
+    #[prost(uint32, tag = "4")]
+    pub wire_bytes_len: u32,
+    #[prost(uint64, tag = "5")]
+    pub timestamp_ms: u64,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

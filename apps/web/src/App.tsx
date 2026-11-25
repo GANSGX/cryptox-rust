@@ -29,6 +29,8 @@ import {
   TelegramPatternWallpapers,
   type WallpaperVariant,
 } from "./components/TelegramPatternWallpapers";
+import { MessengerWorkspace } from "./components/MessengerWorkspace";
+import { callClientWireProtobuf, ClientWireOp } from "./lib/protoWire";
 import { cn } from "./lib/utils";
 
 type AuthView = "login" | "register" | "sso" | "recovery-issued" | "recover-password";
@@ -43,6 +45,22 @@ export const App: React.FC = () => {
     const saved = localStorage.getItem("cryptox_wallpaper") as WallpaperVariant | null;
     if (saved === "space" || saved === "math" || saved === "cyber") return saved;
     return "space";
+  });
+
+  // Если открыт `/auth` — показываем экран входа; если `/` — открываем мессенджер для активной сессии
+  const [activeUser, setActiveUser] = useState<string | null>(() => {
+    if (window.location.pathname.startsWith("/auth")) {
+      return null;
+    }
+    const params = new URLSearchParams(window.location.search);
+    const fromQuery = params.get("user");
+    if (fromQuery && fromQuery.trim()) {
+      return fromQuery.trim().replace(/^@/, "").toLowerCase();
+    }
+    const fromSession =
+      sessionStorage.getItem("cryptox_active_user") ||
+      localStorage.getItem("cryptox_active_user");
+    return fromSession ? fromSession.trim().toLowerCase() : null;
   });
 
   const [view, setView] = useState<AuthView>("login");
@@ -146,7 +164,16 @@ export const App: React.FC = () => {
     const clean = username.trim().replace(/^@/, "").toLowerCase();
     sessionStorage.setItem("cryptox_active_user", clean);
     localStorage.setItem("cryptox_active_user", clean);
-    window.location.href = "/?user=" + encodeURIComponent(clean);
+    window.history.pushState({}, "", "/?user=" + encodeURIComponent(clean));
+    setActiveUser(clean);
+  };
+
+  const handleLogout = () => {
+    sessionStorage.removeItem("cryptox_active_user");
+    localStorage.removeItem("cryptox_active_user");
+    window.history.pushState({}, "", "/auth");
+    setActiveUser(null);
+    setView("login");
   };
 
   const handleLogin = async (e: React.FormEvent) => {
@@ -163,22 +190,18 @@ export const App: React.FC = () => {
 
     setLoading(true);
     try {
-      const res = await fetch("/api/auth/login", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          username: loginId.trim(),
-          password: loginPassword,
-        }),
+      const resp = await callClientWireProtobuf({
+        op: ClientWireOp.Login,
+        caller_username: loginId.trim(),
+        password: loginPassword,
       });
-      const data = await res.json();
-      if (!res.ok) {
-        setErrorMsg(data.error || "Неверный логин или пароль");
+      if (!resp.ok) {
+        setErrorMsg(resp.error_message || "Неверный логин или пароль");
         return;
       }
-      finishAuth(data.username);
+      finishAuth(resp.username);
     } catch {
-      setErrorMsg("Не удалось связаться с сервером");
+      setErrorMsg("Не удалось связаться с сервером по бинарному каналу Protobuf");
     } finally {
       setLoading(false);
     }
@@ -207,26 +230,22 @@ export const App: React.FC = () => {
 
     setLoading(true);
     try {
-      const res = await fetch("/api/register", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          display_name: regName.trim(),
-          email: regEmail.trim(),
-          username: regUsername.trim(),
-          password: regPassword,
-        }),
+      const resp = await callClientWireProtobuf({
+        op: ClientWireOp.Register,
+        display_name: regName.trim(),
+        email: regEmail.trim(),
+        caller_username: regUsername.trim(),
+        password: regPassword,
       });
-      const data = await res.json();
-      if (!res.ok) {
-        setErrorMsg(data.error || "Не удалось создать аккаунт");
+      if (!resp.ok) {
+        setErrorMsg(resp.error_message || "Не удалось создать аккаунт");
         return;
       }
-      setRegisteredUsername(data.username);
-      setIssuedRecoveryKey(data.recovery_key);
+      setRegisteredUsername(resp.username);
+      setIssuedRecoveryKey(resp.recovery_key);
       switchAuthView("recovery-issued");
     } catch {
-      setErrorMsg("Не удалось связаться с сервером");
+      setErrorMsg("Не удалось связаться с сервером по бинарному каналу Protobuf");
     } finally {
       setLoading(false);
     }
@@ -246,22 +265,18 @@ export const App: React.FC = () => {
 
     setLoading(true);
     try {
-      const res = await fetch("/api/auth/sso", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          domain: ssoDomain.trim(),
-          email: ssoEmail.trim(),
-        }),
+      const resp = await callClientWireProtobuf({
+        op: ClientWireOp.SsoLogin,
+        domain: ssoDomain.trim(),
+        email: ssoEmail.trim(),
       });
-      const data = await res.json();
-      if (!res.ok) {
-        setErrorMsg(data.error || "Ошибка корпоративного входа SSO");
+      if (!resp.ok) {
+        setErrorMsg(resp.error_message || "Ошибка корпоративного входа SSO");
         return;
       }
-      finishAuth(data.username);
+      finishAuth(resp.username);
     } catch {
-      setErrorMsg("Не удалось связаться с сервером SSO");
+      setErrorMsg("Не удалось связаться с сервером SSO по каналу Protobuf");
     } finally {
       setLoading(false);
     }
@@ -294,30 +309,40 @@ export const App: React.FC = () => {
 
     setLoading(true);
     try {
-      const res = await fetch("/api/auth/recover-password", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          username: recId.trim(),
-          recovery_key: recKey.trim(),
-          new_password: recNewPassword,
-        }),
+      const resp = await callClientWireProtobuf({
+        op: ClientWireOp.RecoverPassword,
+        caller_username: recId.trim(),
+        recovery_key: recKey.trim(),
+        password: recNewPassword,
       });
-      const data = await res.json();
-      if (!res.ok) {
-        setErrorMsg(data.error || "Не удалось восстановить пароль");
+      if (!resp.ok) {
+        setErrorMsg(resp.error_message || "Не удалось восстановить пароль");
         return;
       }
-      setSuccessMsg("Пароль обновлён, сейф ключей перешифрован");
-      setTimeout(() => finishAuth(data.username), 800);
+      setSuccessMsg("Пароль обновлён, сейф ключей перешифрован (Protobuf)");
+      setTimeout(() => finishAuth(resp.username), 800);
     } catch {
-      setErrorMsg("Не удалось связаться с сервером");
+      setErrorMsg("Не удалось связаться с сервером по бинарному каналу Protobuf");
     } finally {
       setLoading(false);
     }
   };
 
   const isDark = theme === "dark";
+
+  if (activeUser) {
+    return (
+      <MessengerWorkspace
+        activeUsername={activeUser}
+        theme={theme}
+        wallpaper={wallpaper}
+        onChangeWallpaper={setWallpaper}
+        onToggleTheme={handleLiquidThemeToggle}
+        onSwitchAccount={(uname) => finishAuth(uname)}
+        onLogout={handleLogout}
+      />
+    );
+  }
 
   // Оценка надежности пароля (0..4)
   const passwordStrength = (() => {

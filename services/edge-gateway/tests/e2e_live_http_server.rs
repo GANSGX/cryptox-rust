@@ -79,10 +79,10 @@ async fn test_live_axum_server_e2e_ws_disk_search_chat_cloud_sync_and_chaos() {
         let _ = axum::serve(listener, app).await;
     });
 
-    // 1. Проверяем отдачу нового продуктового HTML UI и NOC Status Dashboard (`/status`)
+    // 1. Проверяем отдачу нового продуктового React + Protobuf SPA (`/`, `/auth`) и NOC Status Dashboard (`/status`)
     let html_resp = raw_http_request(addr, "GET", "/", None).await;
     assert!(html_resp.contains("HTTP/1.1 200 OK"));
-    assert!(html_resp.contains("Вход в CryptoX Enterprise"));
+    assert!(html_resp.contains("Вход в CryptoX"));
 
     let status_html = raw_http_request(addr, "GET", "/status", None).await;
     assert!(status_html.contains("HTTP/1.1 200 OK"));
@@ -200,4 +200,46 @@ async fn test_live_axum_server_e2e_ws_disk_search_chat_cloud_sync_and_chaos() {
     let state_resp = raw_http_request(addr, "GET", "/api/state", None).await;
     assert!(state_resp.contains("HTTP/1.1 200 OK"));
     assert!(!state_resp.contains(r#""storage_records_written":0"#));
+
+    // 11. Проверяем 100% бинарный Protobuf RPC шлюза (`POST /rpc/v1/client-wire`, `application/x-protobuf`)
+    {
+        use cryptox_proto::{ClientWireOp, ClientWireRequestProto, ClientWireResponseProto};
+        use prost::Message;
+
+        let proto_req = ClientWireRequestProto {
+            op: ClientWireOp::SendChatMessage as i32,
+            caller_username: "alice_ceo".to_string(),
+            peer_username: "bob_architect".to_string(),
+            plaintext_message: "Binary Protobuf Client-to-Gateway Wire Packet!".to_string(),
+            ..ClientWireRequestProto::default()
+        };
+        let req_bytes = proto_req.encode_to_vec();
+
+        let mut stream = tokio::net::TcpStream::connect(addr)
+            .await
+            .expect("connect proto tcp");
+        let header = format!(
+            "POST /rpc/v1/client-wire HTTP/1.1\r\nHost: 127.0.0.1\r\nContent-Type: application/x-protobuf\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+            req_bytes.len()
+        );
+        stream.write_all(header.as_bytes()).await.expect("write header");
+        stream.write_all(&req_bytes).await.expect("write proto body");
+
+        let mut resp_buf = Vec::new();
+        stream.read_to_end(&mut resp_buf).await.expect("read proto resp");
+
+        let split_pos = resp_buf
+            .windows(4)
+            .position(|w| w == b"\r\n\r\n")
+            .expect("http header separator")
+            + 4;
+        let headers_str = String::from_utf8_lossy(&resp_buf[..split_pos]);
+        assert!(headers_str.contains("HTTP/1.1 200 OK"));
+        assert!(headers_str.to_lowercase().contains("content-type: application/x-protobuf"));
+
+        let proto_resp =
+            ClientWireResponseProto::decode(&resp_buf[split_pos..]).expect("decode binary protobuf");
+        assert!(proto_resp.ok, "Protobuf response must be ok");
+        assert!(proto_resp.wire_bytes_len > 100, "Must return encrypted envelope wire length");
+    }
 }
