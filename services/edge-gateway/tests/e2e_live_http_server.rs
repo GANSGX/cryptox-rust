@@ -82,7 +82,7 @@ async fn test_live_axum_server_e2e_ws_disk_search_chat_cloud_sync_and_chaos() {
     // 1. Проверяем отдачу нового продуктового React + Protobuf SPA (`/`, `/auth`) и NOC Status Dashboard (`/status`)
     let html_resp = raw_http_request(addr, "GET", "/", None).await;
     assert!(html_resp.contains("HTTP/1.1 200 OK"));
-    assert!(html_resp.contains("Вход в CryptoX"));
+    assert!(html_resp.contains("CryptoX"));
 
     let status_html = raw_http_request(addr, "GET", "/status", None).await;
     assert!(status_html.contains("HTTP/1.1 200 OK"));

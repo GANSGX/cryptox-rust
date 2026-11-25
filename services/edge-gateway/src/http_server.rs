@@ -1337,6 +1337,31 @@ fn handle_client_wire_proto_inner(
                 ..ClientWireResponseProto::default()
             }
         }
+        Some(ClientWireOp::CheckUsername) => {
+            let norm = req
+                .caller_username
+                .trim()
+                .trim_start_matches('@')
+                .to_lowercase();
+            if norm.len() < 3 {
+                return proto_err_resp("Минимум 3 символа");
+            }
+            if norm.len() > 32
+                || !norm
+                    .chars()
+                    .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '.' || c == '-')
+            {
+                return proto_err_resp("Только латиница, цифры и _ . -");
+            }
+            if state.client_enclaves.contains_key(&norm) {
+                return proto_err_resp("Имя пользователя уже занято");
+            }
+            ClientWireResponseProto {
+                ok: true,
+                username: norm,
+                ..ClientWireResponseProto::default()
+            }
+        }
         None | Some(ClientWireOp::Unspecified) => proto_err_resp("Неизвестный код операции Protobuf"),
     }
 }

@@ -5,7 +5,6 @@ import {
   Check,
   CheckCheck,
   Code2,
-  Cpu,
   Database,
   HardDrive,
   KeyRound,
@@ -13,14 +12,11 @@ import {
   Loader2,
   Lock,
   LogOut,
-  MessageSquareLock,
   Moon,
   RefreshCw,
   Search,
   Send,
   ShieldCheck,
-  Sigma,
-  Sparkles,
   Sun,
   UserCheck,
   Users,
@@ -43,8 +39,8 @@ import { cn } from "../lib/utils";
 interface MessengerWorkspaceProps {
   activeUsername: string;
   theme: "dark" | "light";
-  wallpaper: WallpaperVariant;
-  onChangeWallpaper: (w: WallpaperVariant) => void;
+  wallpaper?: WallpaperVariant;
+  onChangeWallpaper?: (w: WallpaperVariant) => void;
   onToggleTheme: (e: React.MouseEvent<HTMLButtonElement>) => void;
   onSwitchAccount: (username: string) => void;
   onLogout: () => void;
@@ -53,8 +49,7 @@ interface MessengerWorkspaceProps {
 export const MessengerWorkspace: React.FC<MessengerWorkspaceProps> = ({
   activeUsername,
   theme,
-  wallpaper,
-  onChangeWallpaper,
+  wallpaper = "unified",
   onToggleTheme,
   onSwitchAccount,
   onLogout,
@@ -554,49 +549,6 @@ export const MessengerWorkspace: React.FC<MessengerWorkspaceProps> = ({
               </button>
             </div>
           </div>
-
-          {/* Переключатель тематического паттерна обоев (Космос / Математика / Кибер) */}
-          <div className="flex items-center justify-between gap-1.5">
-            <div
-              className={cn(
-                "flex flex-1 items-center rounded-lg border p-0.5 text-[11px]",
-                isDark
-                  ? "border-zinc-800/90 bg-zinc-900/70"
-                  : "border-zinc-200/90 bg-zinc-100/80"
-              )}
-            >
-              {(
-                [
-                  { id: "space", label: "Космос", icon: Sparkles },
-                  { id: "math", label: "Математика", icon: Sigma },
-                  { id: "cyber", label: "Кибер", icon: Cpu },
-                ] as const
-              ).map((item) => {
-                const Icon = item.icon;
-                const active = wallpaper === item.id;
-                return (
-                  <button
-                    key={item.id}
-                    type="button"
-                    onClick={() => onChangeWallpaper(item.id)}
-                    className={cn(
-                      "flex flex-1 items-center justify-center gap-1 rounded-md py-1 font-medium transition-all cursor-pointer",
-                      active
-                        ? isDark
-                          ? "bg-zinc-800 text-white shadow-xs"
-                          : "bg-white text-zinc-900 shadow-xs"
-                        : isDark
-                          ? "text-zinc-400 hover:text-zinc-200"
-                          : "text-zinc-600 hover:text-zinc-900"
-                    )}
-                  >
-                    <Icon className="h-3 w-3" />
-                    <span>{item.label}</span>
-                  </button>
-                );
-              })}
-            </div>
-          </div>
         </div>
 
         {/* Поиск по корпоративному каталогу `user-directory-svc` (Protobuf) */}
@@ -865,30 +817,134 @@ export const MessengerWorkspace: React.FC<MessengerWorkspaceProps> = ({
         {/* Поток сообщений */}
         <div className="relative z-10 flex-1 overflow-y-auto px-6 py-5 space-y-3">
           {messages.length === 0 ? (
-            <div className="flex h-full flex-col items-center justify-center text-center">
-              <div
-                className={cn(
-                  "max-w-sm rounded-2xl border p-6 shadow-xl backdrop-blur-xl",
-                  isDark
-                    ? "border-zinc-800/90 bg-[#141418]/90"
-                    : "border-zinc-200/90 bg-white/90"
-                )}
+            <div className="flex h-full flex-col items-center justify-center text-center select-none">
+              <motion.div
+                initial={{ opacity: 0, scale: 0.94, y: 8 }}
+                animate={{ opacity: 1, scale: 1, y: 0 }}
+                transition={{ type: "spring", stiffness: 320, damping: 28 }}
+                className="flex flex-col items-center"
               >
-                <div className="mx-auto mb-3 flex h-11 w-11 items-center justify-center rounded-2xl bg-indigo-500/15 text-indigo-400">
-                  <MessageSquareLock className="h-5 w-5" />
-                </div>
-                <h3 className="text-sm font-semibold">
-                  Сквозное шифрование Zero-Knowledge
+                {/* Авторская иллюстрация двух дружелюбных персонажей в бабблах (в стиле Скриншота 2) */}
+                <svg
+                  width="188"
+                  height="156"
+                  viewBox="0 0 188 156"
+                  fill="none"
+                  xmlns="http://www.w3.org/2000/svg"
+                  className="mb-3 drop-shadow-md"
+                >
+                  {/* Левый баббл-персонаж */}
+                  <g transform="translate(14, 10)">
+                    <path
+                      d="M44 6C66.0914 6 84 22.5655 84 43C84 63.4345 66.0914 80 44 80C36.12 80 28.77 77.89 22.58 74.24L6 81L11.8 66.12C6.88 59.72 4 51.72 4 43C4 22.5655 21.9086 6 44 6Z"
+                      fill={isDark ? "#e4e4e7" : "#ffffff"}
+                      stroke={isDark ? "#27272a" : "#d4d4d8"}
+                      strokeWidth="3"
+                      strokeLinejoin="round"
+                    />
+                    {/* Голова и туловище внутри левого баббла */}
+                    <circle
+                      cx="45"
+                      cy="38"
+                      r="22"
+                      fill={isDark ? "#fafafa" : "#f4f4f5"}
+                      stroke="#18181b"
+                      strokeWidth="2.6"
+                    />
+                    <path
+                      d="M27 72C28 59 35 55 45 55C55 55 62 59 63 72"
+                      fill={isDark ? "#fafafa" : "#f4f4f5"}
+                      stroke="#18181b"
+                      strokeWidth="2.6"
+                      strokeLinecap="round"
+                    />
+                    {/* Глазки и радостная улыбка */}
+                    <circle cx="37" cy="36" r="2.6" fill="#18181b" />
+                    <circle cx="54" cy="34" r="2.6" fill="#18181b" />
+                    <path
+                      d="M38 43C41 41 49 40 53 42C52 48 47 51 43 50C39 49 38 46 38 43Z"
+                      fill="#18181b"
+                    />
+                  </g>
+
+                  {/* Правый баббл-персонаж */}
+                  <g transform="translate(88, 54)">
+                    <path
+                      d="M44 6C21.9086 6 4 22.5655 4 43C4 63.4345 21.9086 80 44 80C51.88 80 59.23 77.89 65.42 74.24L82 81L76.2 66.12C81.12 59.72 84 51.72 84 43C84 22.5655 66.0914 6 44 6Z"
+                      fill={isDark ? "#e4e4e7" : "#ffffff"}
+                      stroke={isDark ? "#27272a" : "#d4d4d8"}
+                      strokeWidth="3"
+                      strokeLinejoin="round"
+                    />
+                    <circle
+                      cx="43"
+                      cy="38"
+                      r="22"
+                      fill={isDark ? "#fafafa" : "#f4f4f5"}
+                      stroke="#18181b"
+                      strokeWidth="2.6"
+                    />
+                    <path
+                      d="M25 72C26 59 33 55 43 55C53 55 60 59 61 72"
+                      fill={isDark ? "#fafafa" : "#f4f4f5"}
+                      stroke="#18181b"
+                      strokeWidth="2.6"
+                      strokeLinecap="round"
+                    />
+                    {/* Глазки и широкая улыбка */}
+                    <circle cx="34" cy="34" r="2.6" fill="#18181b" />
+                    <circle cx="51" cy="36" r="2.6" fill="#18181b" />
+                    <path
+                      d="M32 42C37 40 48 41 53 43C51 51 35 51 32 42Z"
+                      fill="#ffffff"
+                      stroke="#18181b"
+                      strokeWidth="2.2"
+                      strokeLinejoin="round"
+                    />
+                    <line
+                      x1="38"
+                      y1="42"
+                      x2="38"
+                      y2="48"
+                      stroke="#18181b"
+                      strokeWidth="1.8"
+                    />
+                    <line
+                      x1="43"
+                      y1="42"
+                      x2="43"
+                      y2="49"
+                      stroke="#18181b"
+                      strokeWidth="1.8"
+                    />
+                    <line
+                      x1="48"
+                      y1="42"
+                      x2="48"
+                      y2="48"
+                      stroke="#18181b"
+                      strokeWidth="1.8"
+                    />
+                  </g>
+                </svg>
+
+                <h3
+                  className={cn(
+                    "text-base font-semibold tracking-tight",
+                    isDark ? "text-zinc-200" : "text-zinc-800"
+                  )}
+                >
+                  Нет сообщений
                 </h3>
-                <p className="mt-1.5 text-xs leading-relaxed text-zinc-500">
-                  Все сообщения шифруются на клиенте алгоритмом{" "}
-                  <span className="font-mono text-zinc-400">XChaCha20-Poly1305</span>,
-                  подписываются ключом{" "}
-                  <span className="font-mono text-zinc-400">Ed25519</span> и
-                  передаются исключительно в бинарном формате{" "}
-                  <span className="font-mono text-zinc-400">Protobuf</span>.
+                <p
+                  className={cn(
+                    "mt-1 text-xs",
+                    isDark ? "text-zinc-500" : "text-zinc-500"
+                  )}
+                >
+                  Начните переписку первым
                 </p>
-              </div>
+              </motion.div>
             </div>
           ) : (
             messages.map((m) => {
@@ -1014,11 +1070,7 @@ export const MessengerWorkspace: React.FC<MessengerWorkspaceProps> = ({
               type="text"
               value={messageInput}
               onChange={(e) => handleInputTyping(e.target.value)}
-              placeholder={
-                selectedPeer
-                  ? `Зашифрованное сообщение для @${selectedPeer} (Protobuf)...`
-                  : "Выберите собеседника..."
-              }
+              placeholder="Сообщение"
               aria-label="Текст сообщения"
               disabled={!selectedPeer || sending}
               className={cn(

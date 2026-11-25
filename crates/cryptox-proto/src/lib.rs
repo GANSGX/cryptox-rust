@@ -738,6 +738,7 @@ pub enum ClientWireOp {
     FetchChatHistory = 8,
     MarkChatRead = 9,
     CloudSyncNewDevice = 10,
+    CheckUsername = 11,
 }
 
 impl ClientWireOp {
@@ -754,6 +755,7 @@ impl ClientWireOp {
             8 => Some(Self::FetchChatHistory),
             9 => Some(Self::MarkChatRead),
             10 => Some(Self::CloudSyncNewDevice),
+            11 => Some(Self::CheckUsername),
             _ => None,
         }
     }

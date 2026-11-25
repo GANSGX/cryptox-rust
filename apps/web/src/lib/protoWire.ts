@@ -12,6 +12,7 @@ export const ClientWireOp = {
   FetchChatHistory: 8,
   MarkChatRead: 9,
   CloudSyncNewDevice: 10,
+  CheckUsername: 11,
 } as const;
 
 export type ClientWireOpCode = (typeof ClientWireOp)[keyof typeof ClientWireOp];

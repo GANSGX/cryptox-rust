@@ -1,27 +1,27 @@
 import React from "react";
 
-export type WallpaperVariant = "space" | "math" | "cyber";
+export type WallpaperVariant = "unified" | "space" | "math" | "cyber";
 
-interface Props {
-  variant: WallpaperVariant;
+interface WallpaperProps {
+  variant?: WallpaperVariant;
   theme: "dark" | "light";
 }
 
-export const TelegramPatternWallpapers: React.FC<Props> = ({ variant, theme }) => {
+/**
+ * Плотный бесшовный статичный SVG-паттерн в стиле оригинального Telegram Web:
+ * без искусственных свечений и блюра, объединяющий Космос, Астрономию, Математику и Физику
+ * в единую детализированную линейную графику высокой плотности.
+ */
+export const TelegramPatternWallpapers: React.FC<WallpaperProps> = ({
+  theme,
+}) => {
   const isDark = theme === "dark";
 
   return (
-    <div className="pointer-events-none fixed inset-0 z-0 overflow-hidden select-none">
-      {/* Мягкое радиальное свечение под центральной карточкой */}
-      <div
-        className="absolute inset-0 transition-opacity duration-500"
-        style={{
-          background: isDark
-            ? "radial-gradient(circle at 50% 50%, rgba(139, 92, 246, 0.06) 0%, rgba(245, 158, 11, 0.03) 35%, rgba(9, 9, 11, 0) 75%)"
-            : "radial-gradient(circle at 50% 50%, rgba(99, 102, 241, 0.05) 0%, rgba(24, 24, 27, 0) 70%)",
-        }}
-      />
-
+    <div
+      className="pointer-events-none fixed inset-0 z-0 overflow-hidden select-none"
+      aria-hidden="true"
+    >
       <svg
         className="h-full w-full"
         xmlns="http://www.w3.org/2000/svg"
@@ -29,402 +29,422 @@ export const TelegramPatternWallpapers: React.FC<Props> = ({ variant, theme }) =
         height="100%"
       >
         <defs>
-          {/* Фирменный градиент штрихов в стиле Telegram Web (фиолетово-янтарный в темной теме, графитовый в светлой) */}
-          <linearGradient id="tgStrokeGradDark" x1="0%" y1="0%" x2="100%" y2="100%">
-            <stop offset="0%" stopColor="#a78bfa" stopOpacity="0.16" />
-            <stop offset="50%" stopColor="#c084fc" stopOpacity="0.13" />
-            <stop offset="100%" stopColor="#fbbf24" stopOpacity="0.15" />
+          {/* Мягкий диагональный градиент штрихов как в оригинальном Telegram Web (Скриншот 1 и 3) */}
+          <linearGradient id="tg-doodle-stroke" x1="0%" y1="0%" x2="100%" y2="100%">
+            {isDark ? (
+              <>
+                <stop offset="0%" stopColor="#9370db" stopOpacity="0.24" />
+                <stop offset="30%" stopColor="#c084fc" stopOpacity="0.21" />
+                <stop offset="65%" stopColor="#f472b6" stopOpacity="0.20" />
+                <stop offset="100%" stopColor="#fb923c" stopOpacity="0.22" />
+              </>
+            ) : (
+              <>
+                <stop offset="0%" stopColor="#4f46e5" stopOpacity="0.16" />
+                <stop offset="35%" stopColor="#7c3aed" stopOpacity="0.15" />
+                <stop offset="70%" stopColor="#db2777" stopOpacity="0.14" />
+                <stop offset="100%" stopColor="#2563eb" stopOpacity="0.16" />
+              </>
+            )}
           </linearGradient>
 
-          <linearGradient id="tgStrokeGradLight" x1="0%" y1="0%" x2="100%" y2="100%">
-            <stop offset="0%" stopColor="#3f3f46" stopOpacity="0.14" />
-            <stop offset="50%" stopColor="#52525b" stopOpacity="0.12" />
-            <stop offset="100%" stopColor="#18181b" stopOpacity="0.15" />
-          </linearGradient>
-
-          {/* =================================================================
-              ПАТТЕРН 1: КОСМОС И ОРБИТЫ (TELEGRAM DOODLE WALLPAPER)
-             ================================================================= */}
+          {/* Единый высокоплотный бесшовный тайл 380x380: Космос + Астрономия + Математика + Физика */}
           <pattern
-            id="pattern-space"
-            width="320"
-            height="320"
+            id="pattern-science-cosmos-dense"
+            x="0"
+            y="0"
+            width="380"
+            height="380"
             patternUnits="userSpaceOnUse"
           >
             <g
-              stroke={isDark ? "url(#tgStrokeGradDark)" : "url(#tgStrokeGradLight)"}
+              stroke="url(#tg-doodle-stroke)"
               fill="none"
               strokeWidth="1.45"
               strokeLinecap="round"
               strokeLinejoin="round"
             >
-              {/* 1. Сатурн с кольцами */}
-              <g transform="translate(46, 48) rotate(-18)">
+              {/* 1. Сатурн с кольцами и орбитальным спутником */}
+              <g transform="translate(38, 42) rotate(-18)">
                 <circle cx="0" cy="0" r="16" />
-                <ellipse cx="0" cy="0" rx="30" ry="8" />
-                <path d="M-12,-6 C-4,-10 6,-10 13,-5" />
+                <path d="M-9 -6 Q0 -2 9 -6" />
+                <path d="M-12 4 Q0 8 12 4" />
+                <ellipse cx="0" cy="0" rx="32" ry="9" />
+                <ellipse cx="0" cy="0" rx="26" ry="6" />
+                <circle cx="35" cy="-6" r="2.2" />
               </g>
 
-              {/* 2. Космическая ракета */}
-              <g transform="translate(155, 42) rotate(28)">
-                <path d="M0,-22 C10,-12 10,8 8,16 L-8,16 C-10,8 -10,-12 0,-22 Z" />
-                <circle cx="0" cy="-4" r="4.5" />
-                <path d="M-8,8 L-15,18 L-8,16 M8,8 L15,18 L8,16" />
-                <path d="M-4,16 L0,25 L4,16" />
-              </g>
-
-              {/* 3. Телескоп на треноге */}
-              <g transform="translate(268, 52) rotate(-12)">
-                <rect x="-18" y="-8" width="32" height="10" rx="3" transform="rotate(-20)" />
-                <path d="M0,2 L-12,22 M0,2 L12,22 M0,2 L0,24" />
-                <circle cx="16" cy="-10" r="3" />
-              </g>
-
-              {/* 4. Спутник с солнечными панелями */}
-              <g transform="translate(105, 118) rotate(15)">
-                <rect x="-7" y="-7" width="14" height="14" rx="2" />
-                <rect x="-27" y="-5" width="16" height="10" rx="1" />
-                <rect x="11" y="-5" width="16" height="10" rx="1" />
-                <path d="M-19,-5 L-19,5 M19,-5 L19,5 M0,7 L0,15" />
-                <path d="M-5,18 A7,7 0 0,1 5,18" />
-              </g>
-
-              {/* 5. Полумесяц и звезды */}
-              <g transform="translate(215, 112) rotate(-22)">
-                <path d="M6,-16 A16,16 0 1,0 18,10 A12,12 0 1,1 6,-16 Z" />
-                <path d="M18,-10 L20,-5 L25,-3 L20,-1 L18,4 L16,-1 L11,-3 L16,-5 Z" />
-              </g>
-
-              {/* 6. Шлем космонавта */}
-              <g transform="translate(42, 168) rotate(12)">
-                <circle cx="0" cy="0" r="18" />
-                <rect x="-12" y="-8" width="24" height="13" rx="6" />
-                <path d="M-10,16 L10,16 M-6,-4 L-2,-4" />
-              </g>
-
-              {/* 7. Спиральная галактика и орбита атома */}
-              <g transform="translate(162, 182) rotate(-8)">
-                <ellipse cx="0" cy="0" rx="22" ry="8" transform="rotate(30)" />
-                <ellipse cx="0" cy="0" rx="22" ry="8" transform="rotate(-30)" />
-                <circle cx="0" cy="0" r="4" />
-                <circle cx="16" cy="9" r="2" />
-              </g>
-
-              {/* 8. НЛО / Летающая тарелка */}
-              <g transform="translate(274, 174) rotate(16)">
-                <path d="M-12,-2 A12,10 0 0,1 12,-2" />
-                <ellipse cx="0" cy="0" rx="24" ry="7" />
-                <path d="M-10,9 L-14,17 M0,10 L0,19 M10,9 L14,17" />
-              </g>
-
-              {/* 9. Созвездие Большой Медведицы */}
-              <g transform="translate(96, 236) rotate(-10)">
-                <circle cx="-22" cy="-8" r="2.2" />
-                <circle cx="-10" cy="-4" r="2.2" />
-                <circle cx="0" cy="2" r="2.2" />
-                <circle cx="12" cy="0" r="2.2" />
-                <circle cx="22" cy="10" r="2.2" />
-                <circle cx="10" cy="14" r="2.2" />
-                <path d="M-22,-8 L-10,-4 L0,2 L12,0 L22,10 L10,14 L0,2" />
-              </g>
-
-              {/* 10. Комета с хвостом */}
-              <g transform="translate(222, 248) rotate(-35)">
-                <circle cx="-12" cy="0" r="7" />
-                <path d="M-6,-5 L24,-10 M-4,0 L28,0 M-6,5 L22,10" />
-              </g>
-
-              {/* 11. Радиотелескоп / Антенна дальней связи */}
-              <g transform="translate(44, 284) rotate(8)">
-                <path d="M-16,-6 A18,18 0 0,0 16,-6 Z" />
-                <path d="M0,-6 L0,-18 M-10,14 L0,3 L10,14" />
-                <circle cx="0" cy="-19" r="2" />
-              </g>
-
-              {/* 12. Планета с кратерами и спутником */}
-              <g transform="translate(158, 288) rotate(-14)">
-                <circle cx="0" cy="0" r="15" />
-                <circle cx="-5" cy="-4" r="3" />
-                <circle cx="6" cy="5" r="2.2" />
-                <circle cx="23" cy="-12" r="3.5" />
-              </g>
-
-              {/* 13. Компас-звезда */}
-              <g transform="translate(278, 285) rotate(20)">
-                <path d="M0,-16 L4,-4 L16,0 L4,4 L0,16 L-4,4 L-16,0 L-4,-4 Z" />
-                <circle cx="0" cy="0" r="2" />
-              </g>
-
-              {/* Мелкие звездочки и точки для плотности паттерна */}
-              <circle cx="95" cy="30" r="1.5" />
-              <circle cx="210" cy="35" r="1.5" />
-              <circle cx="24" cy="108" r="1.8" />
-              <circle cx="152" cy="110" r="1.5" />
-              <circle cx="298" cy="116" r="1.5" />
-              <circle cx="102" cy="176" r="1.8" />
-              <circle cx="215" cy="186" r="1.5" />
-              <circle cx="32" cy="230" r="1.5" />
-              <circle cx="290" cy="235" r="1.8" />
-              <circle cx="105" cy="296" r="1.5" />
-            </g>
-          </pattern>
-
-          {/* =================================================================
-              ПАТТЕРН 2: МАТЕМАТИКА И КРИПТОГРАФИЯ (TELEGRAM DOODLE WALLPAPER)
-             ================================================================= */}
-          <pattern
-            id="pattern-math"
-            width="320"
-            height="320"
-            patternUnits="userSpaceOnUse"
-          >
-            <g
-              stroke={isDark ? "url(#tgStrokeGradDark)" : "url(#tgStrokeGradLight)"}
-              fill="none"
-              strokeWidth="1.4"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            >
-              {/* 1. Изометрический гиперкуб */}
-              <g transform="translate(48, 48) rotate(-14)">
-                <polygon points="0,-20 18,-10 18,10 0,20 -18,10 -18,-10" />
-                <path d="M0,-20 L0,0 M18,10 L0,0 M-18,10 L0,0" />
-                <polygon points="0,-10 9,-5 9,5 0,10 -9,5 -9,-5" />
-              </g>
-
-              {/* 2. Формула эллиптической кривой Curve25519 */}
-              <g transform="translate(120, 42) rotate(-6)">
+              {/* 2. Формула Эйлера и крипто-интеграл Контура */}
+              <g transform="translate(105, 30) rotate(-6)">
+                <path d="M0 22 C0 8 8 0 14 4 C16 6 14 10 11 9" />
+                <ellipse cx="3.5" cy="11" rx="4.5" ry="2.8" />
                 <text
-                  x="0"
-                  y="0"
-                  stroke="none"
-                  fill={isDark ? "rgba(196,181,253,0.17)" : "rgba(39,39,42,0.17)"}
+                  x="13"
+                  y="15"
                   fontFamily="JetBrains Mono, monospace"
                   fontSize="11.5"
                   fontWeight="600"
+                  stroke="none"
+                  fill="url(#tg-doodle-stroke)"
                 >
-                  y² = x³ + 486662x² + x
+                  e^(iπ)+1=0
                 </text>
               </g>
 
-              {/* 3. Циркуль и геометрия */}
-              <g transform="translate(274, 48) rotate(18)">
-                <path d="M0,-18 L-10,16 M0,-18 L10,16" />
-                <circle cx="0" cy="-18" r="3" />
-                <path d="M-12,6 A16,16 0 0,0 12,6" />
+              {/* 3. Атом Резерфорда-Бора с 3 электронными орбиталями */}
+              <g transform="translate(245, 42) rotate(12)">
+                <circle cx="0" cy="0" r="3.5" fill="url(#tg-doodle-stroke)" />
+                <ellipse cx="0" cy="0" rx="22" ry="8" />
+                <ellipse cx="0" cy="0" rx="22" ry="8" transform="rotate(60)" />
+                <ellipse cx="0" cy="0" rx="22" ry="8" transform="rotate(120)" />
+                <circle cx="22" cy="0" r="2" />
+                <circle cx="-11" cy="19" r="2" />
+                <circle cx="-11" cy="-19" r="2" />
               </g>
 
-              {/* 4. Лента Мёбиуса / Знак бесконечности */}
-              <g transform="translate(98, 108) rotate(12)">
-                <path d="M-18,0 C-18,-12 -6,-12 0,0 C6,12 18,12 18,0 C18,-12 6,-12 0,0 C-6,12 -18,12 -18,0 Z" />
+              {/* 4. Космическая ракета на взлёте */}
+              <g transform="translate(332, 48) rotate(32)">
+                <path d="M0 -24 C10 -12 11 5 11 16 L-11 16 C-11 5 -10 -12 0 -24 Z" />
+                <path d="M-7 -12 Q0 -9 7 -12" />
+                <circle cx="0" cy="-2" r="4.5" />
+                <circle cx="0" cy="7" r="2.2" />
+                <path d="M-11 8 L-19 19 L-11 16" />
+                <path d="M11 8 L19 19 L11 16" />
+                <path d="M-5 16 Q0 28 5 16" />
+                <path d="M-2.5 16 Q0 23 2.5 16" />
               </g>
 
-              {/* 5. График функции и интеграл */}
-              <g transform="translate(216, 108) rotate(-10)">
-                <path d="M-20,14 L22,14 M-16,18 L-16,-16" />
-                <path d="M-16,10 C-6,-14 4,14 18,-12" />
+              {/* 5. Оптическая призма Ньютона с дисперсией луча */}
+              <g transform="translate(158, 86) rotate(-8)">
+                <polygon points="0,-18 -20,15 20,15" />
+                <line x1="-34" y1="4" x2="-9" y2="-2" />
+                <line x1="9" y1="-4" x2="34" y2="-12" />
+                <line x1="11" y1="0" x2="36" y2="-4" />
+                <line x1="13" y1="4" x2="36" y2="4" />
+                <line x1="15" y1="8" x2="34" y2="12" />
+              </g>
+
+              {/* 6. Астрономический телескоп на треноге */}
+              <g transform="translate(46, 128) rotate(14)">
+                <path d="M-20 -10 L18 -20 L22 -10 L-16 -2 Z" />
+                <path d="M18 -22 L25 -24 L28 -10 L22 -8 Z" />
+                <path d="M-20 -10 L-26 -8 L-24 -1 L-17 -3" />
+                <circle cx="0" cy="-6" r="3" />
+                <line x1="0" y1="-3" x2="-15" y2="20" />
+                <line x1="0" y1="-3" x2="15" y2="20" />
+                <line x1="0" y1="-3" x2="0" y2="22" />
+              </g>
+
+              {/* 7. 3D Изометрический тессеракт / гиперкуб */}
+              <g transform="translate(108, 122) rotate(16)">
+                <polygon points="0,-18 16,-9 16,9 0,18 -16,9 -16,-9" />
+                <polyline points="-16,-9 0,0 16,-9" />
+                <line x1="0" y1="0" x2="0" y2="18" />
+                <polygon points="0,-9 8,-4.5 8,4.5 0,9 -8,4.5 -8,-4.5" strokeDasharray="2 2" />
+              </g>
+
+              {/* 8. Шлем космонавта с бликом и антенной */}
+              <g transform="translate(226, 122) rotate(-12)">
+                <circle cx="0" cy="0" r="18" />
+                <rect x="-12" y="-9" width="24" height="15" rx="7.5" />
+                <path d="M-7 -5 Q-2 -7 4 -5" />
+                <path d="M-11 16 L11 16 L14 21 L-14 21 Z" />
+                <line x1="18" y1="-4" x2="23" y2="-15" />
+                <circle cx="23" cy="-17" r="2" />
+              </g>
+
+              {/* 9. Уравнение Шрёдингера и волновая функция Ψ */}
+              <g transform="translate(292, 114) rotate(7)">
+                <text
+                  x="0"
+                  y="12"
+                  fontFamily="JetBrains Mono, monospace"
+                  fontSize="11.5"
+                  fontWeight="600"
+                  stroke="none"
+                  fill="url(#tg-doodle-stroke)"
+                >
+                  iℏ∂Ψ/∂t = ĤΨ
+                </text>
+                <path d="M2 20 Q12 10 22 20 T42 20 T62 20 T82 20" />
+              </g>
+
+              {/* 10. Орбитальный спутник с солнечными батареями */}
+              <g transform="translate(164, 174) rotate(-26)">
+                <rect x="-6" y="-9" width="12" height="18" rx="2.5" />
+                <rect x="-28" y="-6" width="18" height="12" rx="1.5" />
+                <rect x="10" y="-6" width="18" height="12" rx="1.5" />
+                <line x1="-19" y1="-6" x2="-19" y2="6" />
+                <line x1="19" y1="-6" x2="19" y2="6" />
+                <line x1="-28" y1="0" x2="-10" y2="0" />
+                <line x1="10" y1="0" x2="28" y2="0" />
+                <path d="M-6 9 Q0 16 6 9" />
+                <line x1="0" y1="13" x2="0" y2="21" />
+                <circle cx="0" cy="23" r="2" />
+              </g>
+
+              {/* 11. Золотая спираль Фибоначчи и сетка */}
+              <g transform="translate(36, 218) rotate(-8)">
+                <rect x="-18" y="-12" width="36" height="24" rx="1.5" />
+                <line x1="6" y1="-12" x2="6" y2="12" />
+                <line x1="6" y1="0" x2="18" y2="0" />
+                <path d="M-18 12 A24 24 0 0 1 6 -12 A12 12 0 0 1 18 0 A6 6 0 0 1 12 6 A3 3 0 0 1 9 3" />
+              </g>
+
+              {/* 12. Эллиптическая кривая Cryptography y² = x³ + ax + b */}
+              <g transform="translate(94, 212) rotate(5)">
+                <line x1="-18" y1="0" x2="24" y2="0" strokeDasharray="2 2" />
+                <line x1="0" y1="-18" x2="0" y2="18" strokeDasharray="2 2" />
+                <path d="M16 -16 C2 -12 -14 0 2 0 C14 0 2 -12 -10 0 C2 12 14 0 2 0 C-14 0 2 12 16 16" />
+              </g>
+
+              {/* 13. НЛО / летающая тарелка с поисковым лучом */}
+              <g transform="translate(262, 198) rotate(14)">
+                <path d="M-13 -2 A13 11 0 0 1 13 -2" />
+                <ellipse cx="0" cy="0" rx="25" ry="7" />
+                <circle cx="-13" cy="0" r="1.6" />
+                <circle cx="0" cy="2" r="1.6" />
+                <circle cx="13" cy="0" r="1.6" />
+                <path d="M-9 7 L-16 23 M9 7 L16 23" strokeDasharray="2.5 2.5" />
+              </g>
+
+              {/* 14. Молодой полумесяц с кратерами и облаком */}
+              <g transform="translate(342, 192) rotate(-18)">
+                <path d="M8 -18 A20 20 0 1 0 22 14 A15 15 0 1 1 8 -18 Z" />
+                <circle cx="-6" cy="-3" r="2.6" />
+                <circle cx="-3" cy="7" r="1.8" />
+                <circle cx="-10" cy="5" r="1.4" />
+              </g>
+
+              {/* 15. Лента Мёбиуса / знак бесконечности и сумма ряда Σ */}
+              <g transform="translate(154, 246) rotate(-11)">
+                <path d="M-16 0 C-16 -10 -5 -10 0 0 C5 10 16 10 16 0 C16 -10 5 -10 0 0 C-5 10 -16 10 -16 0 Z" />
+                <text
+                  x="22"
+                  y="5"
+                  fontFamily="JetBrains Mono, monospace"
+                  fontSize="11"
+                  fontWeight="600"
+                  stroke="none"
+                  fill="url(#tg-doodle-stroke)"
+                >
+                  ∑ 1/n² = π²/6
+                </text>
+              </g>
+
+              {/* 16. Радиотелескоп / параболическая антенна Дальнего Космоса */}
+              <g transform="translate(46, 308) rotate(10)">
+                <path d="M-18 -10 A22 22 0 0 0 18 -10 Z" />
+                <line x1="0" y1="-10" x2="0" y2="-22" />
+                <circle cx="0" cy="-23" r="2.2" />
+                <line x1="-10" y1="-10" x2="0" y2="-21" />
+                <line x1="10" y1="-10" x2="0" y2="-21" />
+                <path d="M-6 2 L-14 18 L14 18 L6 2" />
+                <path d="M-6 -28 A12 12 0 0 1 6 -28" />
+                <path d="M-11 -33 A18 18 0 0 1 11 -33" />
+              </g>
+
+              {/* 17. Падающая комета с хвостом */}
+              <g transform="translate(122, 312) rotate(-32)">
+                <circle cx="0" cy="0" r="6.5" />
+                <circle cx="-2" cy="-1.5" r="1.4" />
+                <path d="M5 -5 L36 -13" />
+                <path d="M7 0 L42 0" />
+                <path d="M5 5 L34 12" />
+              </g>
+
+              {/* 18. Спиральная галактика Андромеды / Чёрная дыра */}
+              <g transform="translate(226, 298) rotate(22)">
+                <circle cx="0" cy="0" r="4.5" />
+                <ellipse cx="0" cy="0" rx="22" ry="8" />
+                <path d="M4 0 C12 -10 24 -6 22 8" />
+                <path d="M-4 0 C-12 10 -24 6 -22 -8" />
+                <path d="M0 4 C10 12 6 22 -8 20" />
+                <path d="M0 -4 C-10 -12 -6 -22 8 -20" />
+              </g>
+
+              {/* 19. Формула Эйнштейна и постоянная Планка + Маятник */}
+              <g transform="translate(296, 286) rotate(-9)">
+                <text
+                  x="0"
+                  y="0"
+                  fontFamily="JetBrains Mono, monospace"
+                  fontSize="11.5"
+                  fontWeight="600"
+                  stroke="none"
+                  fill="url(#tg-doodle-stroke)"
+                >
+                  E = mc²
+                </text>
                 <text
                   x="-6"
-                  y="-4"
-                  stroke="none"
-                  fill={isDark ? "rgba(251,191,36,0.16)" : "rgba(39,39,42,0.16)"}
+                  y="16"
                   fontFamily="JetBrains Mono, monospace"
-                  fontSize="13"
+                  fontSize="10.5"
                   fontWeight="600"
+                  stroke="none"
+                  fill="url(#tg-doodle-stroke)"
                 >
-                  ∮ E·dA
+                  ∇×B = μ₀J + ε₀μ₀∂E/∂t
                 </text>
               </g>
 
-              {/* 6. Тетраэдр Симплекс */}
-              <g transform="translate(42, 168) rotate(22)">
-                <polygon points="0,-20 19,14 -19,14" />
-                <path d="M0,-20 L2,4 M19,14 L2,4 M-19,14 L2,4" />
+              {/* 20. Геометрический циркуль и транспортир */}
+              <g transform="translate(182, 344) rotate(12)">
+                <circle cx="0" cy="-14" r="2.5" />
+                <line x1="-1.5" y1="-12" x2="-11" y2="12" />
+                <line x1="1.5" y1="-12" x2="11" y2="12" />
+                <path d="M-14 4 A16 16 0 0 0 14 4" />
               </g>
 
-              {/* 7. Формула Эйлера и Argon2id */}
-              <g transform="translate(115, 174) rotate(8)">
-                <text
-                  x="0"
-                  y="0"
-                  stroke="none"
-                  fill={isDark ? "rgba(196,181,253,0.17)" : "rgba(39,39,42,0.17)"}
-                  fontFamily="JetBrains Mono, monospace"
-                  fontSize="12"
-                  fontWeight="600"
-                >
-                  e^(iπ) + 1 = 0
-                </text>
+              {/* 21. Тетраэдр / пирамида и векторное поле */}
+              <g transform="translate(338, 342) rotate(-16)">
+                <polygon points="0,-16 -16,11 16,11" />
+                <line x1="0" y1="-16" x2="4" y2="17" />
+                <line x1="-16" y1="11" x2="4" y2="17" />
+                <line x1="16" y1="11" x2="4" y2="17" />
               </g>
 
-              {/* 8. Золотая спираль Фибоначчи */}
-              <g transform="translate(268, 172) rotate(-15)">
-                <rect x="-18" y="-12" width="36" height="24" rx="2" />
-                <path d="M6,-12 L6,12 M6,2 L18,2" />
-                <path d="M-18,12 A24,24 0 0,1 6,-12 A14,14 0 0,1 18,2 A10,10 0 0,1 6,12" />
+              {/* 22. Созвездие Большой Медведицы / Кассиопеи */}
+              <g transform="translate(88, 168) rotate(-14)">
+                <polyline
+                  points="0,0 12,-7 24,-2 34,9 48,5"
+                  strokeDasharray="2.5 2.5"
+                />
+                <circle cx="0" cy="0" r="2" fill="url(#tg-doodle-stroke)" />
+                <circle cx="12" cy="-7" r="2" fill="url(#tg-doodle-stroke)" />
+                <circle cx="24" cy="-2" r="2" fill="url(#tg-doodle-stroke)" />
+                <circle cx="34" cy="9" r="2.2" fill="url(#tg-doodle-stroke)" />
+                <circle cx="48" cy="5" r="2.2" fill="url(#tg-doodle-stroke)" />
               </g>
 
-              {/* 9. Криптографический ключ и замок */}
-              <g transform="translate(96, 236) rotate(-24)">
-                <circle cx="-10" cy="0" r="8" />
-                <circle cx="-10" cy="0" r="2.5" />
-                <path d="M-2,0 L18,0 M12,0 L12,7 M17,0 L17,5" />
+              {/* 23. Магнит / силовые линии диполя */}
+              <g transform="translate(298, 232) rotate(-22)">
+                <path d="M-10 -10 L-10 2 A10 10 0 0 0 10 2 L10 -10 L5 -10 L5 2 A5 5 0 0 1 -5 2 L-5 -10 Z" />
+                <line x1="-10" y1="-6" x2="-5" y2="-6" />
+                <line x1="5" y1="-6" x2="10" y2="-6" />
+                <path d="M-7 -14 Q0 -22 7 -14" strokeDasharray="2 2" />
               </g>
 
-              {/* 10. Сумма ряда и хэш BLAKE3 */}
-              <g transform="translate(178, 240) rotate(-7)">
-                <text
-                  x="0"
-                  y="0"
-                  stroke="none"
-                  fill={isDark ? "rgba(251,191,36,0.17)" : "rgba(39,39,42,0.17)"}
-                  fontFamily="JetBrains Mono, monospace"
-                  fontSize="11.5"
-                  fontWeight="600"
-                >
-                  ∑ x_i · G → BLAKE3
-                </text>
-              </g>
+              {/* 24. Дополнительные математические символы и мини-планеты для максимальной плотности */}
+              <text
+                x="78"
+                y="76"
+                fontFamily="JetBrains Mono, monospace"
+                fontSize="13"
+                fontWeight="600"
+                stroke="none"
+                fill="url(#tg-doodle-stroke)"
+              >
+                ∫
+              </text>
+              <text
+                x="196"
+                y="54"
+                fontFamily="JetBrains Mono, monospace"
+                fontSize="12"
+                fontWeight="600"
+                stroke="none"
+                fill="url(#tg-doodle-stroke)"
+              >
+                π ≈ 3.1415
+              </text>
+              <text
+                x="278"
+                y="78"
+                fontFamily="JetBrains Mono, monospace"
+                fontSize="11"
+                fontWeight="600"
+                stroke="none"
+                fill="url(#tg-doodle-stroke)"
+              >
+                Δx·Δp ≥ ℏ/2
+              </text>
+              <text
+                x="18"
+                y="176"
+                fontFamily="JetBrains Mono, monospace"
+                fontSize="11.5"
+                fontWeight="600"
+                stroke="none"
+                fill="url(#tg-doodle-stroke)"
+              >
+                √2
+              </text>
+              <text
+                x="202"
+                y="214"
+                fontFamily="JetBrains Mono, monospace"
+                fontSize="11.5"
+                fontWeight="600"
+                stroke="none"
+                fill="url(#tg-doodle-stroke)"
+              >
+                λ = h/p
+              </text>
+              <text
+                x="72"
+                y="268"
+                fontFamily="JetBrains Mono, monospace"
+                fontSize="11"
+                fontWeight="600"
+                stroke="none"
+                fill="url(#tg-doodle-stroke)"
+              >
+                f(x)=sin(ωt)
+              </text>
+              <text
+                x="18"
+                y="362"
+                fontFamily="JetBrains Mono, monospace"
+                fontSize="11"
+                fontWeight="600"
+                stroke="none"
+                fill="url(#tg-doodle-stroke)"
+              >
+                ∀x ∈ ℝ
+              </text>
+              <text
+                x="254"
+                y="358"
+                fontFamily="JetBrains Mono, monospace"
+                fontSize="11"
+                fontWeight="600"
+                stroke="none"
+                fill="url(#tg-doodle-stroke)"
+              >
+                ∮ B·dl = μ₀I
+              </text>
 
-              {/* 11. Октаэдр */}
-              <g transform="translate(46, 286) rotate(-12)">
-                <polygon points="0,-18 16,0 0,18 -16,0" />
-                <path d="M0,-18 L0,18 M-16,0 L16,0" />
-              </g>
+              {/* Четырёхконечные звёздочки, мини-планеты и астероиды (заполняют пустоты как в ТГ) */}
+              <path d="M90 14 L92 19 L97 21 L92 23 L90 28 L88 23 L83 21 L88 19 Z" />
+              <path d="M292 18 L293.5 22 L297.5 23.5 L293.5 25 L292 29 L290.5 25 L286.5 23.5 L290.5 22 Z" />
+              <path d="M180 120 L182 125 L187 127 L182 129 L180 134 L178 129 L173 127 L178 125 Z" />
+              <path d="M356 128 L357.5 132 L361.5 133.5 L357.5 135 L356 139 L354.5 135 L350.5 133.5 L354.5 132 Z" />
+              <path d="M142 196 L143.5 200 L147.5 201.5 L143.5 203 L142 207 L140.5 203 L136.5 201.5 L140.5 200 Z" />
+              <path d="M242 246 L244 251 L249 253 L244 255 L242 260 L240 255 L235 253 L240 251 Z" />
+              <path d="M94 348 L95.5 352 L99.5 353.5 L95.5 355 L94 359 L92.5 355 L88.5 353.5 L92.5 352 Z" />
+              <path d="M12 84 L13.5 88 L17.5 89.5 L13.5 91 L12 95 L10.5 91 L6.5 89.5 L10.5 88 Z" />
 
-              {/* 12. Диаграмма Венна / Пересечение множеств */}
-              <g transform="translate(162, 288) rotate(14)">
-                <circle cx="-7" cy="0" r="12" />
-                <circle cx="7" cy="0" r="12" />
-              </g>
-
-              {/* 13. Диффи-Хеллман формула */}
-              <g transform="translate(226, 292) rotate(10)">
-                <text
-                  x="0"
-                  y="0"
-                  stroke="none"
-                  fill={isDark ? "rgba(196,181,253,0.17)" : "rgba(39,39,42,0.17)"}
-                  fontFamily="JetBrains Mono, monospace"
-                  fontSize="11.5"
-                  fontWeight="600"
-                >
-                  g^(ab) mod p
-                </text>
-              </g>
-            </g>
-          </pattern>
-
-          {/* =================================================================
-              ПАТТЕРН 3: КИБЕРНЕТИКА И СЕТИ (TELEGRAM DOODLE WALLPAPER)
-             ================================================================= */}
-          <pattern
-            id="pattern-cyber"
-            width="320"
-            height="320"
-            patternUnits="userSpaceOnUse"
-          >
-            <g
-              stroke={isDark ? "url(#tgStrokeGradDark)" : "url(#tgStrokeGradLight)"}
-              fill="none"
-              strokeWidth="1.45"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            >
-              {/* 1. Микропроцессор с ножками */}
-              <g transform="translate(48, 48) rotate(-12)">
-                <rect x="-14" y="-14" width="28" height="28" rx="4" />
-                <rect x="-7" y="-7" width="14" height="14" rx="2" />
-                <path d="M-8,-14 L-8,-20 M0,-14 L0,-20 M8,-14 L8,-20" />
-                <path d="M-8,14 L-8,20 M0,14 L0,20 M8,14 L8,20" />
-                <path d="M-14,-8 L-20,-8 M-14,0 L-20,0 M-14,8 L-20,8" />
-                <path d="M14,-8 L20,-8 M14,0 L20,0 M14,8 L20,8" />
-              </g>
-
-              {/* 2. Крипто-щит с замком */}
-              <g transform="translate(160, 48) rotate(14)">
-                <path d="M0,-18 L15,-12 L15,2 C15,12 0,19 0,19 C0,19 -15,12 -15,2 L-15,-12 Z" />
-                <rect x="-5" y="-2" width="10" height="8" rx="1.5" />
-                <path d="M-3,-2 L-3,-5 A3,3 0 0,1 3,-5 L3,-2" />
-              </g>
-
-              {/* 3. Окно терминала >_ */}
-              <g transform="translate(268, 50) rotate(-16)">
-                <rect x="-20" y="-14" width="40" height="28" rx="4" />
-                <path d="M-20,-6 L20,-6 M-12,2 L-6,6 L-12,10 M-2,10 L6,10" />
-              </g>
-
-              {/* 4. Дерево хэшей (Merkle Tree) */}
-              <g transform="translate(104, 118) rotate(8)">
-                <circle cx="0" cy="-12" r="4" />
-                <circle cx="-14" cy="10" r="4" />
-                <circle cx="14" cy="10" r="4" />
-                <path d="M-2,-8 L-12,6 M2,-8 L12,6" />
-              </g>
-
-              {/* 5. Серверный кластер */}
-              <g transform="translate(220, 118) rotate(-14)">
-                <rect x="-18" y="-14" width="36" height="11" rx="2" />
-                <rect x="-18" y="2" width="36" height="11" rx="2" />
-                <circle cx="-11" cy="-8.5" r="1.5" />
-                <circle cx="-11" cy="7.5" r="1.5" />
-                <path d="M2,-8.5 L12,-8.5 M2,7.5 L12,7.5" />
-              </g>
-
-              {/* 6. Глобус сети */}
-              <g transform="translate(46, 174) rotate(18)">
-                <circle cx="0" cy="0" r="16" />
-                <ellipse cx="0" cy="0" rx="8" ry="16" />
-                <path d="M-15,-5 L15,-5 M-15,5 L15,5" />
-              </g>
-
-              {/* 7. Радар и волны */}
-              <g transform="translate(162, 180) rotate(-20)">
-                <circle cx="0" cy="0" r="3" />
-                <path d="M-8,-6 A10,10 0 0,1 8,-6" />
-                <path d="M-14,-11 A18,18 0 0,1 14,-11" />
-                <path d="M0,3 L-6,16 L6,16 Z" />
-              </g>
-
-              {/* 8. Молния / High-Speed Hotpath */}
-              <g transform="translate(274, 178) rotate(12)">
-                <polygon points="3,-18 -11,2 1,2 -3,18 11,-2 -1,-2" />
-              </g>
-
-              {/* 9. Пара ключей шифрования */}
-              <g transform="translate(100, 242) rotate(-18)">
-                <circle cx="-10" cy="0" r="7" />
-                <path d="M-3,0 L16,0 M10,0 L10,6 M15,0 L15,6" />
-              </g>
-
-              {/* 10. Печатная плата / Дорожки */}
-              <g transform="translate(218, 246) rotate(10)">
-                <path d="M-18,-8 L-4,-8 L4,0 L18,0" />
-                <path d="M-16,8 L2,8 L10,16" />
-                <circle cx="-18" cy="-8" r="2.5" />
-                <circle cx="18" cy="0" r="2.5" />
-                <circle cx="10" cy="16" r="2.5" />
-              </g>
-
-              {/* 11. Облачный сейф */}
-              <g transform="translate(52, 286) rotate(-8)">
-                <path d="M-12,8 A9,9 0 0,1 -10,-9 A12,12 0 0,1 12,-7 A8,8 0 0,1 14,8 Z" />
-              </g>
-
-              {/* 12. Блокчейн / Цепочка блоков */}
-              <g transform="translate(168, 288) rotate(15)">
-                <rect x="-18" y="-6" width="12" height="12" rx="2" />
-                <rect x="6" y="-6" width="12" height="12" rx="2" />
-                <path d="M-6,0 L6,0" />
-              </g>
+              {/* Мини-кольца и точки */}
+              <circle cx="152" cy="18" r="2.5" />
+              <circle cx="62" cy="92" r="2" />
+              <circle cx="268" cy="154" r="3" />
+              <circle cx="326" cy="154" r="1.8" />
+              <circle cx="18" cy="264" r="2.5" />
+              <circle cx="192" cy="284" r="2.2" />
+              <circle cx="364" cy="252" r="2.5" />
+              <circle cx="144" cy="364" r="2" />
             </g>
           </pattern>
         </defs>
 
         <rect
+          x="0"
+          y="0"
           width="100%"
           height="100%"
-          fill={`url(#pattern-${variant})`}
+          fill="url(#pattern-science-cosmos-dense)"
         />
       </svg>
     </div>
