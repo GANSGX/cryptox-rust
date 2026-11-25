@@ -617,6 +617,38 @@ fn proto_err_resp(msg: impl Into<String>) -> ClientWireResponseProto {
     }
 }
 
+fn validate_strict_password(pwd: &str) -> Result<(), &'static str> {
+    if pwd.chars().count() < 8 {
+        return Err("Пароль должен содержать минимум 8 символов");
+    }
+    if !pwd.chars().any(char::is_uppercase) || !pwd.chars().any(char::is_lowercase) {
+        return Err("Пароль должен содержать заглавные и строчные буквы");
+    }
+    if !pwd.chars().any(|c| c.is_ascii_digit()) {
+        return Err("Пароль должен содержать хотя бы одну цифру");
+    }
+    if !pwd.chars().any(|c| !c.is_alphanumeric() && !c.is_whitespace()) {
+        return Err("Пароль должен содержать хотя бы один спецсимвол (!@#$%^&* и др.)");
+    }
+    let bytes = pwd.as_bytes();
+    for w in bytes.windows(2) {
+        if w[0].is_ascii_digit() && w[1].is_ascii_digit() && w[0] == w[1] {
+            return Err("Запрещены одинаковые цифры подряд (например, 11, 00)");
+        }
+    }
+    for w in bytes.windows(3) {
+        if w[0].is_ascii_digit() && w[1].is_ascii_digit() && w[2].is_ascii_digit() {
+            let a = i16::from(w[0]);
+            let b = i16::from(w[1]);
+            let c = i16::from(w[2]);
+            if (b - a == 1 && c - b == 1) || (a - b == 1 && b - c == 1) {
+                return Err("Запрещены идущие подряд цифры (например, 123, 321)");
+            }
+        }
+    }
+    Ok(())
+}
+
 fn handle_client_wire_proto_inner(
     state: &LivePrototypeState,
     raw_bytes: &[u8],
@@ -679,8 +711,8 @@ fn handle_client_wire_proto_inner(
             if !clean_email.is_empty() && state.email_to_username.contains_key(&clean_email) {
                 return proto_err_resp("Аккаунт с такой электронной почтой уже зарегистрирован");
             }
-            if req.password.len() < 6 {
-                return proto_err_resp("Пароль должен содержать минимум 6 символов");
+            if let Err(msg) = validate_strict_password(&req.password) {
+                return proto_err_resp(msg);
             }
             match state.onboard_employee_enclave_with_password(
                 &req.caller_username,

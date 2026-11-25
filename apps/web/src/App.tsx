@@ -328,8 +328,12 @@ export const App: React.FC = () => {
       setErrorMsg("Этот username уже занят, выберите другой");
       return;
     }
-    if (regPassword.length < 6) {
-      setErrorMsg("Пароль должен содержать минимум 6 символов");
+    if (!isPasswordFullyValid) {
+      setErrorMsg(
+        missingRequirements.length > 0
+          ? `Пароль: ${missingRequirements.join(", ")}`
+          : "Пароль не соответствует требованиям безопасности"
+      );
       return;
     }
 
@@ -418,42 +422,62 @@ export const App: React.FC = () => {
     );
   }
 
-  // Детальный расчёт 3 критериев сложности пароля и плавного заполнения 3 капсул "батарейки"
-  const ruleLength = regPassword.length >= 6;
-  const ruleLettersAndCase =
-    /[a-zа-я]/i.test(regPassword) &&
-    (/[A-ZА-Я]/.test(regPassword) || regPassword.length >= 8);
-  const ruleDigitsOrSymbols = /[0-9!@#$%^&*()_+\-=[\]{};':"\\|,.<>/?]/.test(
-    regPassword
-  );
+  // Строгие критерии сложности пароля (показываются ТОЛЬКО когда пользователь начал печатать пароль)
+  const ruleLength = regPassword.length >= 8;
+  const ruleCase = /[A-ZА-Я]/.test(regPassword) && /[a-zа-я]/.test(regPassword);
+  const ruleDigit = /[0-9]/.test(regPassword);
+  const ruleSpecial = /[^a-zA-Zа-яА-Я0-9\s]/.test(regPassword);
 
-  const passedRulesCount =
-    (ruleLength ? 1 : 0) +
-    (ruleLettersAndCase ? 1 : 0) +
-    (ruleDigitsOrSymbols ? 1 : 0);
+  const hasRepeatingDigits = /(\d)\1/.test(regPassword);
+  const hasSequentialDigits = (() => {
+    for (let i = 0; i + 2 < regPassword.length; i++) {
+      const a = regPassword.charCodeAt(i);
+      const b = regPassword.charCodeAt(i + 1);
+      const c = regPassword.charCodeAt(i + 2);
+      const isDig =
+        a >= 48 && a <= 57 && b >= 48 && b <= 57 && c >= 48 && c <= 57;
+      if (isDig && ((b - a === 1 && c - b === 1) || (a - b === 1 && b - c === 1))) {
+        return true;
+      }
+    }
+    return false;
+  })();
+  const ruleNoBadDigits = !hasRepeatingDigits && !hasSequentialDigits;
 
-  // Процент заполнения каждой из 3 капсул слева направо (0..100%)
-  const bar1Fill = !regPassword
-    ? 0
-    : ruleLength
-      ? 100
-      : Math.min(90, Math.round((regPassword.length / 6) * 100));
+  const missingRequirements: string[] = [];
+  if (hasRepeatingDigits) {
+    missingRequirements.push("без одинаковых цифр подряд (11, 00)");
+  } else if (hasSequentialDigits) {
+    missingRequirements.push("без идущих подряд цифр (123, 321)");
+  }
+  if (!ruleLength) missingRequirements.push("минимум 8 символов");
+  if (!ruleCase) missingRequirements.push("заглавная и строчная буква");
+  if (!ruleDigit) missingRequirements.push("цифра");
+  if (!ruleSpecial) missingRequirements.push("спецсимвол (!@#$%)");
 
-  const bar2Fill = !regPassword
-    ? 0
-    : passedRulesCount >= 2
-      ? 100
-      : passedRulesCount === 1 && regPassword.length > 6
-        ? 45
-        : 0;
+  const isPasswordFullyValid =
+    regPassword.length > 0 &&
+    ruleLength &&
+    ruleCase &&
+    ruleDigit &&
+    ruleSpecial &&
+    ruleNoBadDigits;
 
-  const bar3Fill = !regPassword
-    ? 0
-    : passedRulesCount === 3
-      ? 100
-      : passedRulesCount === 2 && regPassword.length >= 10
-        ? 50
-        : 0;
+  // Плавный расчёт процента заполнения 3 капсул "батарейки" слева направо (0..300 -> 3 x 100%)
+  const totalScorePercent = (() => {
+    if (!regPassword) return 0;
+    let pts = Math.min(60, Math.round((regPassword.length / 8) * 60));
+    if (ruleCase) pts += 60;
+    if (ruleDigit) pts += 60;
+    if (ruleSpecial) pts += 60;
+    if (ruleLength && ruleNoBadDigits) pts += 60;
+    if (!ruleNoBadDigits) pts = Math.min(pts, 130);
+    return Math.min(300, pts);
+  })();
+
+  const bar1Fill = Math.min(100, Math.max(0, totalScorePercent));
+  const bar2Fill = Math.min(100, Math.max(0, totalScorePercent - 100));
+  const bar3Fill = Math.min(100, Math.max(0, totalScorePercent - 200));
 
   return (
     <div
@@ -902,110 +926,143 @@ export const App: React.FC = () => {
                   </button>
                 </div>
 
-                {/* 3 капсулы "батарейки": красное перетекает в оранжевое, оранжевое в зеленое */}
-                <div className="pt-0.5 space-y-2">
-                  <div className="grid grid-cols-3 gap-2">
-                    {/* Капсула 1: Красный -> Начало Оранжевого */}
-                    <div
-                      className={cn(
-                        "h-2 w-full overflow-hidden rounded-full",
-                        isDark ? "bg-zinc-800/90" : "bg-zinc-200"
-                      )}
+                {/* Полоски "батарейки" и живая подсказка появляются ТОЛЬКО когда пользователь печатает пароль */}
+                <AnimatePresence initial={false}>
+                  {regPassword.length > 0 && (
+                    <motion.div
+                      key="pwd-battery-hint"
+                      initial={{ opacity: 0, height: 0, marginTop: 0 }}
+                      animate={{ opacity: 1, height: "auto", marginTop: 8 }}
+                      exit={{ opacity: 0, height: 0, marginTop: 0 }}
+                      transition={{
+                        type: "spring",
+                        stiffness: 340,
+                        damping: 30,
+                      }}
+                      className="overflow-hidden"
                     >
-                      <motion.div
-                        initial={{ width: "0%" }}
-                        animate={{ width: `${bar1Fill}%` }}
-                        transition={{
-                          type: "spring",
-                          stiffness: 260,
-                          damping: 28,
-                        }}
-                        className="h-full rounded-full"
-                        style={{
-                          background:
-                            "linear-gradient(90deg, #ef4444 0%, #f97316 100%)",
-                        }}
-                      />
-                    </div>
+                      <div className="space-y-2 pt-0.5">
+                        {/* 3 капсулы "батарейки": красное перетекает в оранжевое, оранжевое в зеленое */}
+                        <div className="grid grid-cols-3 gap-2">
+                          <div
+                            className={cn(
+                              "h-2 w-full overflow-hidden rounded-full",
+                              isDark ? "bg-zinc-800/90" : "bg-zinc-200"
+                            )}
+                          >
+                            <motion.div
+                              initial={{ width: "0%" }}
+                              animate={{ width: `${bar1Fill}%` }}
+                              transition={{
+                                type: "spring",
+                                stiffness: 260,
+                                damping: 28,
+                              }}
+                              className="h-full rounded-full"
+                              style={{
+                                background:
+                                  "linear-gradient(90deg, #ef4444 0%, #f97316 100%)",
+                              }}
+                            />
+                          </div>
 
-                    {/* Капсула 2: Оранжевый -> Янтарный -> Начало Зеленого */}
-                    <div
-                      className={cn(
-                        "h-2 w-full overflow-hidden rounded-full",
-                        isDark ? "bg-zinc-800/90" : "bg-zinc-200"
-                      )}
-                    >
-                      <motion.div
-                        initial={{ width: "0%" }}
-                        animate={{ width: `${bar2Fill}%` }}
-                        transition={{
-                          type: "spring",
-                          stiffness: 260,
-                          damping: 28,
-                        }}
-                        className="h-full rounded-full"
-                        style={{
-                          background:
-                            "linear-gradient(90deg, #f97316 0%, #eab308 55%, #22c55e 100%)",
-                        }}
-                      />
-                    </div>
+                          <div
+                            className={cn(
+                              "h-2 w-full overflow-hidden rounded-full",
+                              isDark ? "bg-zinc-800/90" : "bg-zinc-200"
+                            )}
+                          >
+                            <motion.div
+                              initial={{ width: "0%" }}
+                              animate={{ width: `${bar2Fill}%` }}
+                              transition={{
+                                type: "spring",
+                                stiffness: 260,
+                                damping: 28,
+                              }}
+                              className="h-full rounded-full"
+                              style={{
+                                background:
+                                  "linear-gradient(90deg, #f97316 0%, #eab308 55%, #22c55e 100%)",
+                              }}
+                            />
+                          </div>
 
-                    {/* Капсула 3: Зеленый -> Изумрудный */}
-                    <div
-                      className={cn(
-                        "h-2 w-full overflow-hidden rounded-full",
-                        isDark ? "bg-zinc-800/90" : "bg-zinc-200"
-                      )}
-                    >
-                      <motion.div
-                        initial={{ width: "0%" }}
-                        animate={{ width: `${bar3Fill}%` }}
-                        transition={{
-                          type: "spring",
-                          stiffness: 260,
-                          damping: 28,
-                        }}
-                        className="h-full rounded-full"
-                        style={{
-                          background:
-                            "linear-gradient(90deg, #22c55e 0%, #10b981 100%)",
-                        }}
-                      />
-                    </div>
-                  </div>
+                          <div
+                            className={cn(
+                              "h-2 w-full overflow-hidden rounded-full",
+                              isDark ? "bg-zinc-800/90" : "bg-zinc-200"
+                            )}
+                          >
+                            <motion.div
+                              initial={{ width: "0%" }}
+                              animate={{ width: `${bar3Fill}%` }}
+                              transition={{
+                                type: "spring",
+                                stiffness: 260,
+                                damping: 28,
+                              }}
+                              className="h-full rounded-full"
+                              style={{
+                                background:
+                                  "linear-gradient(90deg, #22c55e 0%, #10b981 100%)",
+                              }}
+                            />
+                          </div>
+                        </div>
 
-                  {/* Интерактивные кастомные требования к сложности пароля */}
-                  <div className="grid grid-cols-3 gap-1.5 pt-0.5">
-                    {[
-                      { ok: ruleLength, label: "6+ символов" },
-                      { ok: ruleLettersAndCase, label: "Буквы A–z" },
-                      { ok: ruleDigitsOrSymbols, label: "Цифры / знаки" },
-                    ].map((req) => (
-                      <div
-                        key={req.label}
-                        className={cn(
-                          "flex items-center justify-center gap-1 rounded-lg border px-2 py-1 text-[10px] font-medium transition-colors",
-                          req.ok
-                            ? isDark
-                              ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-300"
-                              : "border-emerald-300 bg-emerald-50 text-emerald-700"
-                            : isDark
-                              ? "border-zinc-800/80 bg-zinc-900/50 text-zinc-500"
-                              : "border-zinc-200 bg-zinc-100/70 text-zinc-500"
-                        )}
-                      >
-                        <Check
+                        {/* Кастомное динамическое оповещение о том, чего ещё не хватает в пароле */}
+                        <motion.div
+                          layout
                           className={cn(
-                            "h-2.5 w-2.5 shrink-0 transition-transform",
-                            req.ok ? "scale-100 opacity-100" : "scale-75 opacity-40"
+                            "flex items-start gap-2 rounded-xl border px-3 py-2 text-[11px] leading-snug transition-colors",
+                            !ruleNoBadDigits
+                              ? isDark
+                                ? "border-rose-500/35 bg-rose-500/10 text-rose-300"
+                                : "border-rose-200 bg-rose-50 text-rose-700"
+                              : isPasswordFullyValid
+                                ? isDark
+                                  ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-300"
+                                  : "border-emerald-200 bg-emerald-50 text-emerald-700"
+                                : isDark
+                                  ? "border-zinc-800 bg-zinc-900/75 text-zinc-400"
+                                  : "border-zinc-200 bg-zinc-100/80 text-zinc-600"
                           )}
-                        />
-                        <span className="truncate">{req.label}</span>
+                        >
+                          {isPasswordFullyValid ? (
+                            <>
+                              <CheckCircle2 className="mt-0.5 h-3.5 w-3.5 shrink-0 text-emerald-400" />
+                              <span>
+                                Надёжный пароль — все требования выполнены
+                              </span>
+                            </>
+                          ) : (
+                            <>
+                              <AlertCircle
+                                className={cn(
+                                  "mt-0.5 h-3.5 w-3.5 shrink-0",
+                                  !ruleNoBadDigits
+                                    ? "text-rose-400"
+                                    : "text-amber-400"
+                                )}
+                              />
+                              <span>
+                                <strong
+                                  className={
+                                    isDark ? "text-zinc-200" : "text-zinc-800"
+                                  }
+                                >
+                                  Добавьте:{" "}
+                                </strong>
+                                {missingRequirements.join(" • ")}
+                              </span>
+                            </>
+                          )}
+                        </motion.div>
                       </div>
-                    ))}
-                  </div>
-                </div>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
               </div>
 
               <button
