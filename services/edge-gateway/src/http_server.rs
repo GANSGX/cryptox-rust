@@ -25,8 +25,8 @@ use cryptox_proto::{
     ChannelId, CipherSuiteId, ClientDecryptedMessageItemProto, ClientDirectoryPeerProto,
     ClientWireOp, ClientWireRequestProto, ClientWireResponseProto, ClientWireWsEventProto,
     DeviceId, DirectoryEntryProto, EncryptedVaultBlob, EncryptionPolicy, MessageId,
-    PublicKeyBundle, ReadReceiptWatermarkProto, RegisterUserRequest, SignedSessionToken, TenantId,
-    UserId,
+    PersistedUserAccountProto, PublicKeyBundle, ReadReceiptWatermarkProto, RegisterUserRequest,
+    SignedSessionToken, TenantId, UserId,
 };
 use cryptox_storage::EncryptedStorageEngine;
 use dashmap::DashMap;
@@ -87,6 +87,7 @@ pub struct LivePrototypeState {
     pub disk_storage: Option<Arc<EncryptedStorageEngine>>,
     pub client_enclaves: DashMap<String, Arc<ClientDeviceEnclave>>,
     pub email_to_username: DashMap<String, String>,
+    pub persisted_accounts: DashMap<String, PersistedUserAccountProto>,
     /// Шина мгновенных WebSocket-событий для всех открытых вкладок/клиентов (`new_message`, `read_receipt`, `typing`).
     pub ws_event_bus: broadcast::Sender<String>,
     /// Бинарная Protobuf шина мгновенных WebSocket-событий (`ClientWireWsEventProto`).
@@ -144,7 +145,12 @@ impl LivePrototypeState {
         gateway: Arc<EdgeGateway>,
         disk_storage: Option<Arc<EncryptedStorageEngine>>,
     ) -> Arc<Self> {
-        let tenant_id = TenantId::new_v7();
+        // Детерминированный UUIDv7-совместимый TenantId, чтобы при перезапуске сервера все аккаунты и чаты на диске `redb` оставались в том же тенанте
+        let tenant_id = TenantId::from_slice(&[
+            0x01, 0x90, 0x00, 0x00, 0x00, 0x00, 0x70, 0x00, 0x80, 0x00, 0x63, 0x72, 0x79, 0x70,
+            0x74, 0x6f,
+        ])
+        .unwrap_or_else(|_| TenantId::new_v7());
         let (ws_event_bus, _) = broadcast::channel(4096);
         let (ws_proto_bus, _) = broadcast::channel(4096);
 
@@ -154,6 +160,7 @@ impl LivePrototypeState {
             disk_storage,
             client_enclaves: DashMap::new(),
             email_to_username: DashMap::new(),
+            persisted_accounts: DashMap::new(),
             ws_event_bus,
             ws_proto_bus,
             auth_down: AtomicBool::new(false),
@@ -161,6 +168,10 @@ impl LivePrototypeState {
             presence_down: AtomicBool::new(false),
         });
 
+        // 1. Восстанавливаем все ранее зарегистрированные аккаунты, почты, ключи и сессии чатов с зашифрованного диска `redb`
+        state.hydrate_accounts_from_disk();
+
+        // 2. Сидируем базовых пользователей только если их ещё нет на диске
         let seed_employees = [
             ("alice_ceo", "Алиса (CEO / Генеральный директор)"),
             ("bob_architect", "Боб (Principal System Architect)"),
@@ -169,10 +180,183 @@ impl LivePrototypeState {
         ];
 
         for (uname, dname) in seed_employees {
-            let _ = state.onboard_employee_enclave(uname, dname);
+            if !state.client_enclaves.contains_key(uname) {
+                let _ = state.onboard_employee_enclave(uname, dname);
+            }
         }
 
         state
+    }
+
+    fn hydrate_accounts_from_disk(&self) {
+        let Some(storage) = &self.disk_storage else {
+            return;
+        };
+        let Ok(accounts) = storage.load_all_user_accounts(self.tenant_id) else {
+            return;
+        };
+        if accounts.is_empty() {
+            return;
+        }
+
+        let now_ms = Self::now_ms();
+        let mut pending_sessions_by_user: Vec<(String, Vec<ChatSession>)> = Vec::new();
+
+        for acc in accounts {
+            let Ok(user_id) = UserId::from_slice(&acc.user_id) else {
+                continue;
+            };
+            let (Some(bundle), Some(pwd_vault), Some(rec_vault)) = (
+                acc.public_key_bundle.clone(),
+                acc.password_vault_blob.clone(),
+                acc.recovery_vault_blob.clone(),
+            ) else {
+                continue;
+            };
+            let device_id =
+                DeviceId::from_slice(&bundle.device_id).unwrap_or_else(|_| DeviceId::new_v7());
+
+            let Ok((restored_identity, restored_sessions)) = CloudKeyVault::unlock_from_cloud_blob(
+                &rec_vault,
+                acc.recovery_key.as_bytes(),
+                device_id,
+                EncryptionPolicy::StrictZeroKnowledge,
+                None,
+            ) else {
+                continue;
+            };
+
+            if self
+                .gateway
+                .auth_service()
+                .register_user(RegisterUserRequest {
+                    tenant_id: acc.tenant_id.clone(),
+                    user_id: acc.user_id.clone(),
+                    username: acc.username.clone(),
+                    auth_verifying_key: acc.auth_verifying_key.clone(),
+                    public_key_bundle: Some(bundle.clone()),
+                    initial_vault_blob: Some(pwd_vault.clone()),
+                })
+                .is_err()
+            {
+                continue;
+            }
+
+            let Ok(token) = self.gateway.auth_service().mint_restored_session_token(
+                self.tenant_id,
+                user_id,
+                device_id,
+                now_ms,
+            ) else {
+                continue;
+            };
+
+            let _ = self.gateway.directory_service().publish_or_rotate_entry(
+                &token,
+                &acc.username,
+                &acc.display_name,
+                bundle,
+                now_ms + 1,
+            );
+
+            if !acc.email.is_empty() {
+                self.email_to_username
+                    .insert(acc.email.clone(), acc.username.clone());
+            }
+
+            let v_ver = pwd_vault.vault_version.max(1);
+            self.client_enclaves.insert(
+                acc.username.clone(),
+                Arc::new(ClientDeviceEnclave {
+                    username: acc.username.clone(),
+                    display_name: acc.display_name.clone(),
+                    identity: restored_identity,
+                    active_token: token,
+                    device_number: 1,
+                    vault_version: AtomicU64::new(v_ver),
+                    recovery_key: acc.recovery_key.clone(),
+                    recovery_vault_blob: rec_vault,
+                    sessions: DashMap::new(),
+                    peer_bundles: DashMap::new(),
+                }),
+            );
+            self.persisted_accounts
+                .insert(acc.username.clone(), acc.clone());
+            if !restored_sessions.is_empty() {
+                pending_sessions_by_user.push((acc.username, restored_sessions));
+            }
+        }
+
+        // Привязываем восстановленные E2EE сессии к логинам собеседников по их `UserId`
+        let uid_to_uname: Vec<(UserId, String)> = self
+            .client_enclaves
+            .iter()
+            .map(|r| (r.value().identity.user_id(), r.key().clone()))
+            .collect();
+
+        for (uname, sessions) in pending_sessions_by_user {
+            if let Some(enclave) = self.client_enclaves.get(&uname) {
+                for sess in sessions {
+                    let peer_uid = sess.peer_user_id();
+                    if let Some((_, peer_uname)) =
+                        uid_to_uname.iter().find(|(uid, _)| *uid == peer_uid)
+                    {
+                        enclave.sessions.insert(peer_uname.clone(), sess);
+                    }
+                }
+            }
+        }
+    }
+
+    pub fn update_persisted_account_email(&self, username: &str, email: &str) {
+        let mut updated_opt = None;
+        if let Some(mut acc) = self.persisted_accounts.get_mut(username) {
+            acc.email = email.to_string();
+            updated_opt = Some(acc.clone());
+        }
+        if let (Some(storage), Some(acc)) = (&self.disk_storage, updated_opt) {
+            let _ = storage.put_user_account(&acc);
+        }
+    }
+
+    pub fn update_persisted_account_password_and_vault(
+        &self,
+        username: &str,
+        new_auth_vk: &[u8],
+        new_pwd_vault: &EncryptedVaultBlob,
+    ) {
+        let mut updated_opt = None;
+        if let Some(mut acc) = self.persisted_accounts.get_mut(username) {
+            acc.auth_verifying_key = new_auth_vk.to_vec();
+            acc.password_vault_blob = Some(new_pwd_vault.clone());
+            updated_opt = Some(acc.clone());
+        }
+        if let (Some(storage), Some(acc)) = (&self.disk_storage, updated_opt) {
+            let _ = storage.put_user_account(&acc);
+        }
+    }
+
+    pub fn sync_enclave_sessions_to_disk(&self, enclave: &ClientDeviceEnclave) {
+        let mut updated_opt = None;
+        if let Some(mut acc) = self.persisted_accounts.get_mut(&enclave.username) {
+            let session_guards: Vec<_> = enclave.sessions.iter().collect();
+            let session_refs: Vec<&ChatSession> =
+                session_guards.iter().map(|g| g.value()).collect();
+            let v_ver = enclave.vault_version.load(Ordering::Relaxed).max(1);
+            if let Ok(new_rec_vault) = CloudKeyVault::seal_to_cloud_blob(
+                &enclave.identity,
+                &session_refs,
+                enclave.recovery_key.as_bytes(),
+                v_ver,
+                Self::fast_argon_profile(),
+            ) {
+                acc.recovery_vault_blob = Some(new_rec_vault);
+                updated_opt = Some(acc.clone());
+            }
+        }
+        if let (Some(storage), Some(acc)) = (&self.disk_storage, updated_opt) {
+            let _ = storage.put_user_account(&acc);
+        }
     }
 
     #[must_use]
@@ -288,13 +472,29 @@ impl LivePrototypeState {
         let dir_entry: Arc<DirectoryEntryProto> = self
             .gateway
             .directory_service()
-            .publish_or_rotate_entry(&token, &norm_uname, display_name, bundle, now_ms + 2)
+            .publish_or_rotate_entry(&token, &norm_uname, display_name, bundle.clone(), now_ms + 2)
             .map_err(|e| e.to_string())?;
+
+        let persisted_acc = PersistedUserAccountProto {
+            tenant_id: self.tenant_id.to_vec(),
+            user_id: user_id.to_vec(),
+            username: norm_uname.clone(),
+            display_name: display_name.to_string(),
+            email: String::new(),
+            auth_verifying_key: auth_vk.to_vec(),
+            public_key_bundle: Some(bundle),
+            password_vault_blob: Some(vault_blob.clone()),
+            recovery_key: recovery_key.clone(),
+            recovery_vault_blob: Some(recovery_vault_blob.clone()),
+        };
+        self.persisted_accounts
+            .insert(norm_uname.clone(), persisted_acc.clone());
 
         // Синхронно сохраняем в зашифрованное дисковое хранилище `cryptox-storage` (Blind Index + AES-256-GCM)
         if let Some(storage) = &self.disk_storage {
             let _ = storage.put_directory_entries_batch(&[(*dir_entry).clone()]);
             let _ = storage.put_vault_blob(&vault_blob);
+            let _ = storage.put_user_account(&persisted_acc);
         }
 
         self.client_enclaves.insert(
@@ -721,7 +921,10 @@ fn handle_client_wire_proto_inner(
             ) {
                 Ok((uname, recovery_key)) => {
                     if !clean_email.is_empty() {
-                        state.email_to_username.insert(clean_email, uname.clone());
+                        state
+                            .email_to_username
+                            .insert(clean_email.clone(), uname.clone());
+                        state.update_persisted_account_email(&uname, &clean_email);
                     }
                     state.broadcast_proto_ws_event("directory_updated", &uname, "", 0);
                     ClientWireResponseProto {
@@ -852,6 +1055,11 @@ fn handle_client_wire_proto_inner(
             if let Some(storage) = &state.disk_storage {
                 let _ = storage.put_vault_blob(&new_vault_blob);
             }
+            state.update_persisted_account_password_and_vault(
+                &norm,
+                &new_auth_vk,
+                &new_vault_blob,
+            );
             old_enclave.vault_version.store(next_ver, Ordering::SeqCst);
             ClientWireResponseProto {
                 ok: true,
@@ -1077,6 +1285,7 @@ fn handle_client_wire_proto_inner(
             if let Some(storage) = &state.disk_storage {
                 let _ = storage.commit_messages_batch(std::slice::from_ref(&envelope));
             }
+            state.sync_enclave_sessions_to_disk(&sender);
 
             // Авто-обновление облачного сейфа ключей
             if let Some(sess_ref) = sender.sessions.get(&recipient_norm) {
@@ -1504,6 +1713,7 @@ async fn api_register_user(
         Ok((uname, recovery_key)) => {
             if !clean_email.is_empty() {
                 state.email_to_username.insert(clean_email.clone(), uname.clone());
+                state.update_persisted_account_email(&uname, &clean_email);
             }
             (
                 StatusCode::CREATED,
@@ -1760,6 +1970,7 @@ async fn api_auth_recover_password(
     if let Some(storage) = &state.disk_storage {
         let _ = storage.put_vault_blob(&new_vault_blob);
     }
+    state.update_persisted_account_password_and_vault(&norm, &new_auth_vk, &new_vault_blob);
     old_enclave.vault_version.store(next_ver, Ordering::SeqCst);
 
     (
@@ -2080,6 +2291,7 @@ async fn api_send_message(
     if let Some(storage) = &state.disk_storage {
         let _ = storage.commit_messages_batch(std::slice::from_ref(&envelope));
     }
+    state.sync_enclave_sessions_to_disk(&sender);
 
     // 2c. Аналог X3DH PreKey / MLS Welcome: передаем получателю самоподписанный `PublicKeyBundle`
     if let Some(recipient_enclave) = state.client_enclaves.get(&req.recipient_username)

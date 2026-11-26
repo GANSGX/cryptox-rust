@@ -881,6 +881,31 @@ pub struct ClientWireWsEventProto {
     pub timestamp_ms: u64,
 }
 
+/// Запись зарегистрированного аккаунта для постоянного зашифрованного хранения в `cryptox-storage` (`redb`).
+#[derive(Clone, PartialEq, Eq, Message)]
+pub struct PersistedUserAccountProto {
+    #[prost(bytes = "vec", tag = "1")]
+    pub tenant_id: Vec<u8>,
+    #[prost(bytes = "vec", tag = "2")]
+    pub user_id: Vec<u8>,
+    #[prost(string, tag = "3")]
+    pub username: String,
+    #[prost(string, tag = "4")]
+    pub display_name: String,
+    #[prost(string, tag = "5")]
+    pub email: String,
+    #[prost(bytes = "vec", tag = "6")]
+    pub auth_verifying_key: Vec<u8>,
+    #[prost(message, optional, tag = "7")]
+    pub public_key_bundle: Option<PublicKeyBundle>,
+    #[prost(message, optional, tag = "8")]
+    pub password_vault_blob: Option<EncryptedVaultBlob>,
+    #[prost(string, tag = "9")]
+    pub recovery_key: String,
+    #[prost(message, optional, tag = "10")]
+    pub recovery_vault_blob: Option<EncryptedVaultBlob>,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

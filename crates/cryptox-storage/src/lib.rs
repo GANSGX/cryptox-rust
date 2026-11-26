@@ -21,7 +21,7 @@ use aes_gcm::{
 };
 use cryptox_proto::{
     ChannelHistoryPageProto, ChannelId, DirectoryEntryProto, EncryptedEnvelope, EncryptedVaultBlob,
-    MessageId, ProtoError, ReadReceiptWatermarkProto, TenantId, UserId,
+    MessageId, PersistedUserAccountProto, ProtoError, ReadReceiptWatermarkProto, TenantId, UserId,
 };
 use dashmap::DashMap;
 use prost::Message;
@@ -52,6 +52,10 @@ const VAULT_BLOBS_TABLE: TableDefinition<[u8; 32], &[u8]> =
 /// Таблица 4: 48-байтный индекс схлопнутых статусов прочтения `[16B TenantId || 16B ChannelId || 16B UserId] -> SealedRecord`.
 const READ_WATERMARKS_TABLE: TableDefinition<[u8; 48], &[u8]> =
     TableDefinition::new("read_watermarks_v1");
+
+/// Таблица 5: 48-байтный слепой индекс постоянных аккаунтов `[16B TenantId || 32B BlindHash(username)] -> SealedRecord`.
+const ACCOUNTS_TABLE: TableDefinition<[u8; 48], &[u8]> =
+    TableDefinition::new("accounts_v1");
 
 #[derive(Debug, Error)]
 pub enum StorageError {
@@ -123,6 +127,9 @@ impl EncryptedStorageEngine {
                 .map_err(|e| StorageError::Redb(e.to_string()))?;
             let _ = write_txn
                 .open_table(READ_WATERMARKS_TABLE)
+                .map_err(|e| StorageError::Redb(e.to_string()))?;
+            let _ = write_txn
+                .open_table(ACCOUNTS_TABLE)
                 .map_err(|e| StorageError::Redb(e.to_string()))?;
         }
         write_txn
@@ -733,5 +740,83 @@ impl EncryptedStorageEngine {
             .map_err(|_| StorageError::DiskTamperDetected)?;
         self.l1_watermark_cache.insert(key, wm.clone());
         Ok(Some(wm))
+    }
+
+    // =========================================================================
+    // 5. ПОСТОЯННОЕ ХРАНЕНИЕ АККАУНТОВ И КЛЮЧЕЙ (`accounts_v1`, AES-256-GCM + Blind Index)
+    // =========================================================================
+
+    pub fn put_user_account(
+        &self,
+        account: &PersistedUserAccountProto,
+    ) -> Result<(), StorageError> {
+        let tenant_id = TenantId::from_slice(&account.tenant_id)?;
+        let blind_key = self.compute_blind_username_key(tenant_id, &account.username)?;
+        let raw_proto = Zeroizing::new(account.encode_to_vec());
+        let sealed = self.seal_disk_record(
+            tenant_id,
+            b"table:accounts_v1:",
+            &blind_key,
+            &raw_proto,
+        )?;
+
+        let write_txn = self
+            .db
+            .begin_write()
+            .map_err(|e| StorageError::Redb(e.to_string()))?;
+        {
+            let mut table = write_txn
+                .open_table(ACCOUNTS_TABLE)
+                .map_err(|e| StorageError::Redb(e.to_string()))?;
+            table
+                .insert(blind_key, sealed.as_slice())
+                .map_err(|e| StorageError::Redb(e.to_string()))?;
+        }
+        write_txn
+            .commit()
+            .map_err(|e| StorageError::Redb(e.to_string()))?;
+
+        self.group_commits.fetch_add(1, Ordering::Relaxed);
+        self.records_written.fetch_add(1, Ordering::Relaxed);
+        Ok(())
+    }
+
+    pub fn load_all_user_accounts(
+        &self,
+        tenant_id: TenantId,
+    ) -> Result<Vec<PersistedUserAccountProto>, StorageError> {
+        let read_txn = self
+            .db
+            .begin_read()
+            .map_err(|e| StorageError::Redb(e.to_string()))?;
+        let table = read_txn
+            .open_table(ACCOUNTS_TABLE)
+            .map_err(|e| StorageError::Redb(e.to_string()))?;
+
+        let mut lower_bound = [0u8; 48];
+        lower_bound[..16].copy_from_slice(tenant_id.as_bytes());
+        let mut upper_bound = [0xFFu8; 48];
+        upper_bound[..16].copy_from_slice(tenant_id.as_bytes());
+
+        let mut accounts = Vec::new();
+        let range_iter = table
+            .range(lower_bound..=upper_bound)
+            .map_err(|e| StorageError::Redb(e.to_string()))?;
+
+        for item in range_iter {
+            let (k_guard, v_guard) = item.map_err(|e| StorageError::Redb(e.to_string()))?;
+            let k_val = k_guard.value();
+            let raw = self.open_disk_record(
+                tenant_id,
+                b"table:accounts_v1:",
+                &k_val,
+                v_guard.value(),
+            )?;
+            let acc = PersistedUserAccountProto::decode(raw.as_slice())
+                .map_err(|_| StorageError::DiskTamperDetected)?;
+            accounts.push(acc);
+        }
+        self.l2_reads.fetch_add(accounts.len() as u64, Ordering::Relaxed);
+        Ok(accounts)
     }
 }

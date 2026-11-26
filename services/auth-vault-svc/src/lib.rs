@@ -571,6 +571,23 @@ impl AuthVaultService {
         token
     }
 
+    /// Выпускает сессионный токен при восстановлении зарегистрированного аккаунта с зашифрованного диска `redb` при старте сервера.
+    pub fn mint_restored_session_token(
+        &self,
+        tenant_id: TenantId,
+        user_id: UserId,
+        device_id: DeviceId,
+        now_ms: u64,
+    ) -> Result<SignedSessionToken, AuthVaultError> {
+        if !self.accounts_by_id.contains_key(&(tenant_id, user_id)) {
+            return Err(AuthVaultError::UserNotFound);
+        }
+        if self.verifier.revoked_users.contains(&(tenant_id, user_id)) {
+            return Err(AuthVaultError::SessionRevoked);
+        }
+        Ok(self.mint_session_token(tenant_id, user_id, device_id, now_ms))
+    }
+
     /// Обновляет зашифрованный облачный сейф сотрудника (`EncryptedVaultBlob`) с защитой
     /// от отката версий (`Optimistic Concurrency Control`: `new_version == current_version + 1`).
     pub fn push_vault_update(

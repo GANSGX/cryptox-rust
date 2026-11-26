@@ -327,3 +327,145 @@ async fn test_live_axum_server_e2e_ws_disk_search_chat_cloud_sync_and_chaos() {
         assert!(valid_reg.recovery_key.starts_with("CX-"));
     }
 }
+
+#[tokio::test]
+async fn test_cold_reboot_account_email_password_and_chat_persistence_in_redb() {
+    use cryptox_proto::{ClientWireOp, ClientWireRequestProto, ClientWireResponseProto};
+    use prost::Message;
+
+    let dir = tempdir().expect("tempdir");
+    let db_path = dir.path().join("reboot_persistence.redb");
+
+    // ФАЗА 1: Первый запуск сервера — регистрируем аккаунт @vadim_dev и отправляем сообщение @alice_ceo
+    {
+        let auth_svc = Arc::new(AuthVaultService::new());
+        let verifier = auth_svc.export_autonomous_verifier();
+        let dir_svc = Arc::new(UserDirectoryService::new(verifier.clone()));
+        let presence_svc = Arc::new(PresenceReceiptsService::new(verifier.clone()));
+        let msg_svc = Arc::new(MessagingService::new(verifier));
+        let gateway = Arc::new(EdgeGateway::new(auth_svc, dir_svc, presence_svc, msg_svc));
+        let state =
+            LivePrototypeState::new_with_disk_storage(gateway, &db_path).expect("init disk 1");
+        let app = build_app_router(state);
+
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind 1");
+        let addr = listener.local_addr().expect("addr 1");
+        let server_task = tokio::spawn(async move {
+            let _ = axum::serve(listener, app).await;
+        });
+
+        let call_proto = |req: ClientWireRequestProto| async move {
+            let bytes = req.encode_to_vec();
+            let mut s = tokio::net::TcpStream::connect(addr).await.expect("tcp");
+            let h = format!(
+                "POST /rpc/v1/client-wire HTTP/1.1\r\nHost: 127.0.0.1\r\nContent-Type: application/x-protobuf\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+                bytes.len()
+            );
+            s.write_all(h.as_bytes()).await.expect("write h");
+            s.write_all(&bytes).await.expect("write b");
+            let mut buf = Vec::new();
+            s.read_to_end(&mut buf).await.expect("read");
+            let pos = buf.windows(4).position(|w| w == b"\r\n\r\n").expect("sep") + 4;
+            ClientWireResponseProto::decode(&buf[pos..]).expect("decode")
+        };
+
+        let reg = call_proto(ClientWireRequestProto {
+            op: ClientWireOp::Register as i32,
+            caller_username: "vadim_dev".to_string(),
+            display_name: "Вадим".to_string(),
+            email: "vadim@cryptox.ru".to_string(),
+            password: "StrongPass#2026".to_string(),
+            ..ClientWireRequestProto::default()
+        })
+        .await;
+        assert!(reg.ok, "Регистрация до ребута: {}", reg.error_message);
+
+        let send = call_proto(ClientWireRequestProto {
+            op: ClientWireOp::SendChatMessage as i32,
+            caller_username: "vadim_dev".to_string(),
+            peer_username: "alice_ceo".to_string(),
+            plaintext_message: "Сообщение переживёт полный перезапуск сервера!".to_string(),
+            ..ClientWireRequestProto::default()
+        })
+        .await;
+        assert!(send.ok, "Отправка до ребута: {}", send.error_message);
+
+        server_task.abort();
+        let _ = server_task.await;
+    }
+
+    // ФАЗА 2: Холодный перезапуск (новые пустые сервисы в RAM, но тот же файл `reboot_persistence.redb`)
+    {
+        let auth_svc = Arc::new(AuthVaultService::new());
+        let verifier = auth_svc.export_autonomous_verifier();
+        let dir_svc = Arc::new(UserDirectoryService::new(verifier.clone()));
+        let presence_svc = Arc::new(PresenceReceiptsService::new(verifier.clone()));
+        let msg_svc = Arc::new(MessagingService::new(verifier));
+        let gateway = Arc::new(EdgeGateway::new(auth_svc, dir_svc, presence_svc, msg_svc));
+        let state =
+            LivePrototypeState::new_with_disk_storage(gateway, &db_path).expect("init disk 2");
+        let app = build_app_router(state);
+
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind 2");
+        let addr = listener.local_addr().expect("addr 2");
+        let server_task = tokio::spawn(async move {
+            let _ = axum::serve(listener, app).await;
+        });
+
+        let call_proto = |req: ClientWireRequestProto| async move {
+            let bytes = req.encode_to_vec();
+            let mut s = tokio::net::TcpStream::connect(addr).await.expect("tcp");
+            let h = format!(
+                "POST /rpc/v1/client-wire HTTP/1.1\r\nHost: 127.0.0.1\r\nContent-Type: application/x-protobuf\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+                bytes.len()
+            );
+            s.write_all(h.as_bytes()).await.expect("write h");
+            s.write_all(&bytes).await.expect("write b");
+            let mut buf = Vec::new();
+            s.read_to_end(&mut buf).await.expect("read");
+            let pos = buf.windows(4).position(|w| w == b"\r\n\r\n").expect("sep") + 4;
+            ClientWireResponseProto::decode(&buf[pos..]).expect("decode")
+        };
+
+        // 1. Вход после ребута по @username работает без повторной регистрации!
+        let login_uname = call_proto(ClientWireRequestProto {
+            op: ClientWireOp::Login as i32,
+            caller_username: "vadim_dev".to_string(),
+            password: "StrongPass#2026".to_string(),
+            ..ClientWireRequestProto::default()
+        })
+        .await;
+        assert!(login_uname.ok, "Вход по username после ребута: {}", login_uname.error_message);
+
+        // 2. Вход после ребута по электронной почте также работает!
+        let login_email = call_proto(ClientWireRequestProto {
+            op: ClientWireOp::Login as i32,
+            caller_username: "vadim@cryptox.ru".to_string(),
+            password: "StrongPass#2026".to_string(),
+            ..ClientWireRequestProto::default()
+        })
+        .await;
+        assert!(login_email.ok, "Вход по email после ребута: {}", login_email.error_message);
+
+        // 3. История чата расшифровывается после холодного перезапуска сервера!
+        let hist = call_proto(ClientWireRequestProto {
+            op: ClientWireOp::FetchChatHistory as i32,
+            caller_username: "vadim_dev".to_string(),
+            peer_username: "alice_ceo".to_string(),
+            ..ClientWireRequestProto::default()
+        })
+        .await;
+        assert!(hist.ok, "История после ребута: {}", hist.error_message);
+        assert_eq!(hist.messages.len(), 1);
+        assert_eq!(
+            hist.messages[0].decrypted_text,
+            "Сообщение переживёт полный перезапуск сервера!"
+        );
+
+        server_task.abort();
+    }
+}
