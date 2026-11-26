@@ -145,6 +145,14 @@ impl ChatSession {
         self.peer_user_id
     }
 
+    /// Гарантирует, что следующий шаг исходящего рэтчета (`next_outbound_step`) строго больше
+    /// максимального шага, уже записанного в истории канала на диске.
+    pub fn ensure_outbound_step_above(&mut self, max_existing_step: u64) {
+        if self.next_outbound_step <= max_existing_step {
+            self.next_outbound_step = max_existing_step.saturating_add(1);
+        }
+    }
+
     /// Выводит одноразовый 256-битный ключ сообщения для конкретного шага `ratchet_step` и отправителя.
     fn derive_message_key(&self, sender_id: UserId, ratchet_step: u64) -> Zeroizing<[u8; 32]> {
         let mut hasher = blake3::Hasher::new_keyed(&self.master_channel_seed);

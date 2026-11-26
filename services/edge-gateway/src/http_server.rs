@@ -1396,6 +1396,7 @@ fn handle_client_wire_proto_inner(
                 return proto_err_resp("Получатель не найден");
             };
 
+            let mut is_new_session = false;
             if !sender.sessions.contains_key(&recipient_norm) {
                 let Ok(new_session) = ChatSession::establish_direct(
                     &sender.identity,
@@ -1406,11 +1407,27 @@ fn handle_client_wire_proto_inner(
                     return proto_err_resp("Не удалось установить X25519 E2EE сессию");
                 };
                 sender.sessions.insert(recipient_norm.clone(), new_session);
+                is_new_session = true;
             }
 
             let Some(mut session_ref) = sender.sessions.get_mut(&recipient_norm) else {
                 return proto_err_resp("Сессия чата не найдена");
             };
+            if let Ok(existing_hist) = state.fetch_merged_channel_history(
+                &sender.active_token,
+                session_ref.channel_id(),
+                None,
+                50,
+                now_ms,
+            ) {
+                let max_step = existing_hist
+                    .envelopes
+                    .iter()
+                    .map(|e| e.ratchet_step)
+                    .max()
+                    .unwrap_or(0);
+                session_ref.ensure_outbound_step_above(max_step);
+            }
             let Ok(envelope) = session_ref.encrypt_message(
                 &sender.identity,
                 &XChaCha20Poly1305Provider,
@@ -1431,37 +1448,7 @@ fn handle_client_wire_proto_inner(
                 return proto_err_resp(e.to_string());
             }
 
-            if let Some(storage) = &state.disk_storage {
-                let _ = storage.commit_messages_batch(std::slice::from_ref(&envelope));
-            }
-            state.sync_enclave_sessions_to_disk(&sender);
-
-            // Авто-обновление облачного сейфа ключей
-            if let Some(sess_ref) = sender.sessions.get(&recipient_norm) {
-                let next_ver = sender
-                    .vault_version
-                    .fetch_add(1, Ordering::SeqCst)
-                    .saturating_add(1);
-                if let Ok(updated_blob) = CloudKeyVault::seal_to_cloud_blob(
-                    &sender.identity,
-                    &[sess_ref.value()],
-                    DEMO_PASSWORD,
-                    next_ver,
-                    LivePrototypeState::fast_argon_profile(),
-                ) {
-                    if !state.auth_down.load(Ordering::Relaxed) {
-                        let _ = state.gateway.auth_service().push_vault_update(
-                            &sender.active_token,
-                            updated_blob.clone(),
-                            now_ms + 1,
-                        );
-                    }
-                    if let Some(storage) = &state.disk_storage {
-                        let _ = storage.put_vault_blob(&updated_blob);
-                    }
-                }
-            }
-
+            // Мгновенно рассылаем событие WebSocket до любых дисковых операций (< 1 мс)!
             state.broadcast_proto_ws_event("new_message", &sender_norm, &recipient_norm, wire_len);
             let _ = state.ws_event_bus.send(
                 serde_json::json!({
@@ -1472,6 +1459,16 @@ fn handle_client_wire_proto_inner(
                 })
                 .to_string(),
             );
+
+            if let Some(storage) = &state.disk_storage {
+                let _ = storage.commit_messages_batch(std::slice::from_ref(&envelope));
+            }
+
+            // Перешифровываем Argon2id-сейф сессий ТОЛЬКО при создании новой сессии чата (а не на каждое сообщение!)
+            if is_new_session {
+                state.sync_enclave_sessions_to_disk(&sender);
+            }
+            sender.vault_version.fetch_add(1, Ordering::Relaxed);
 
             ClientWireResponseProto {
                 ok: true,
@@ -1631,23 +1628,45 @@ fn handle_client_wire_proto_inner(
             if let Some(last_env) = history_page.envelopes.last()
                 && let Ok(last_msg_id) = MessageId::from_slice(&last_env.message_id)
             {
-                let _ = state.gateway.presence_service().record_read_receipt(
-                    &caller.active_token,
-                    channel_id,
-                    last_msg_id,
-                    now_ms,
-                );
-                if let Some(storage) = &state.disk_storage {
-                    let wm = ReadReceiptWatermarkProto {
-                        tenant_id: state.tenant_id.to_vec(),
-                        channel_id: channel_id.to_vec(),
-                        user_id: caller.identity.user_id().to_vec(),
-                        last_read_message_id: last_msg_id.to_vec(),
-                        updated_at_ms: now_ms,
-                    };
-                    let _ = storage.flush_watermarks_batch(&[wm]);
+                let caller_uid = caller.identity.user_id();
+                let prev_wm_bytes = state
+                    .gateway
+                    .presence_service()
+                    .get_read_watermark(&caller.active_token, channel_id, caller_uid, now_ms)
+                    .ok()
+                    .flatten()
+                    .or_else(|| {
+                        state.disk_storage.as_ref().and_then(|s| {
+                            s.get_read_watermark(state.tenant_id, channel_id, caller_uid)
+                                .ok()
+                                .flatten()
+                        })
+                    })
+                    .map(|wm| wm.last_read_message_id);
+
+                let already_up_to_date = prev_wm_bytes
+                    .as_ref()
+                    .is_some_and(|wm| wm.as_slice() >= last_env.message_id.as_slice());
+
+                if !already_up_to_date {
+                    let _ = state.gateway.presence_service().record_read_receipt(
+                        &caller.active_token,
+                        channel_id,
+                        last_msg_id,
+                        now_ms,
+                    );
+                    if let Some(storage) = &state.disk_storage {
+                        let wm = ReadReceiptWatermarkProto {
+                            tenant_id: state.tenant_id.to_vec(),
+                            channel_id: channel_id.to_vec(),
+                            user_id: caller_uid.to_vec(),
+                            last_read_message_id: last_msg_id.to_vec(),
+                            updated_at_ms: now_ms,
+                        };
+                        let _ = storage.flush_watermarks_batch(&[wm]);
+                    }
+                    state.broadcast_proto_ws_event("read_receipt", &caller_norm, &peer_norm, 0);
                 }
-                state.broadcast_proto_ws_event("read_receipt", &caller_norm, &peer_norm, 0);
             }
 
             ClientWireResponseProto {

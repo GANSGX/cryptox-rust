@@ -3,7 +3,6 @@ import { AnimatePresence, motion } from "framer-motion";
 import {
   Check,
   CheckCheck,
-  Loader2,
   Search,
   X,
 } from "lucide-react";
@@ -156,7 +155,6 @@ export const MessengerWorkspace: React.FC<MessengerWorkspaceProps> = ({
 
   const [messages, setMessages] = useState<ClientDecryptedMessageItem[]>([]);
   const [messageInput, setMessageInput] = useState<string>("");
-  const [sending, setSending] = useState<boolean>(false);
 
   // Индикатор набора текста и непрочитанных сообщений (бинарный WebSocket)
   const [peerTyping, setPeerTyping] = useState<Record<string, number>>({});
@@ -241,44 +239,52 @@ export const MessengerWorkspace: React.FC<MessengerWorkspaceProps> = ({
   );
 
   // Загрузка и расшифровка истории выбранного личного чата по бинарному Protobuf
-  const loadChatHistory = useCallback(async (peerUsername: string) => {
-    if (!peerUsername || !activeUserRef.current) return;
-    try {
-      const resp = await callClientWireProtobuf({
-        op: ClientWireOp.FetchChatHistory,
-        caller_username: activeUserRef.current,
-        peer_username: peerUsername,
-      });
-      if (resp.ok) {
-        setMessages(resp.messages);
-        if (resp.messages.length > 0) {
-          const last = resp.messages[resp.messages.length - 1];
-          setChatSummaries((prev) => ({
-            ...prev,
-            [peerUsername]: {
-              lastText: last.decrypted_text,
-              timestampMs: last.timestamp_ms,
-              isMine: last.sender_username === activeUserRef.current,
-              isReadByPeer: last.is_read_by_peer,
-            },
-          }));
-        }
-        await callClientWireProtobuf({
-          op: ClientWireOp.MarkChatRead,
+  const loadChatHistory = useCallback(
+    async (peerUsername: string, shouldMarkRead = true) => {
+      if (!peerUsername || !activeUserRef.current) return;
+      try {
+        const resp = await callClientWireProtobuf({
+          op: ClientWireOp.FetchChatHistory,
           caller_username: activeUserRef.current,
           peer_username: peerUsername,
         });
-        setUnreadByPeer((prev) => {
-          if (!prev[peerUsername]) return prev;
-          const next = { ...prev };
-          delete next[peerUsername];
-          return next;
-        });
+        if (resp.ok) {
+          setMessages(resp.messages);
+          let hasIncomingFromPeer = false;
+          if (resp.messages.length > 0) {
+            const last = resp.messages[resp.messages.length - 1];
+            hasIncomingFromPeer =
+              last.sender_username !== activeUserRef.current;
+            setChatSummaries((prev) => ({
+              ...prev,
+              [peerUsername]: {
+                lastText: last.decrypted_text,
+                timestampMs: last.timestamp_ms,
+                isMine: last.sender_username === activeUserRef.current,
+                isReadByPeer: last.is_read_by_peer,
+              },
+            }));
+          }
+          if (shouldMarkRead && hasIncomingFromPeer) {
+            void callClientWireProtobuf({
+              op: ClientWireOp.MarkChatRead,
+              caller_username: activeUserRef.current,
+              peer_username: peerUsername,
+            });
+          }
+          setUnreadByPeer((prev) => {
+            if (!prev[peerUsername]) return prev;
+            const next = { ...prev };
+            delete next[peerUsername];
+            return next;
+          });
+        }
+      } catch {
+        // Игнорируем
       }
-    } catch {
-      // Игнорируем
-    }
-  }, []);
+    },
+    []
+  );
 
   useEffect(() => {
     void loadDirectoryPeers(searchQuery);
@@ -356,24 +362,37 @@ export const MessengerWorkspace: React.FC<MessengerWorkspaceProps> = ({
               setActiveChatPeers((prev) =>
                 prev.includes(otherParty) ? prev : [otherParty, ...prev]
               );
-              void loadDirectoryPeers("");
             }
 
             if (
               (ev.sender === currentPeer && ev.recipient === currentActive) ||
               (ev.sender === currentActive && ev.recipient === currentPeer)
             ) {
-              void loadChatHistory(currentPeer);
+              void loadChatHistory(currentPeer, ev.sender === currentPeer);
             } else if (ev.recipient === currentActive) {
               setUnreadByPeer((prev) => ({
                 ...prev,
                 [ev.sender]: (prev[ev.sender] ?? 0) + 1,
               }));
+              void syncPeerSummaries([
+                {
+                  username: ev.sender,
+                  display_name: ev.sender,
+                  key_version: 1,
+                  transparency_seq: 1,
+                  ed25519_pub_hex_short: "",
+                  x25519_pub_hex_short: "",
+                  device_number: 1,
+                  vault_version: 1,
+                  is_online: true,
+                  last_seen_ms: Date.now(),
+                },
+              ]);
             }
           } else if (ev.event_type === "read_receipt") {
             const currentPeer = selectedPeerRef.current;
             if (ev.sender === currentPeer || ev.recipient === currentPeer) {
-              void loadChatHistory(currentPeer);
+              void loadChatHistory(currentPeer, false);
             }
           } else if (
             ev.event_type === "user_registered" ||
@@ -434,29 +453,54 @@ export const MessengerWorkspace: React.FC<MessengerWorkspaceProps> = ({
     }
   };
 
-  // Отправка E2EE сообщения через бинарный Protobuf
+  // Мгновенная (0ms Optimistic UI) отправка E2EE сообщения через бинарный Protobuf
   const handleSendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
     const text = messageInput.trim();
-    if (!text || !selectedPeer || sending) return;
+    const peer = selectedPeer;
+    if (!text || !peer) return;
 
-    setSending(true);
-    try {
-      const resp = await callClientWireProtobuf({
-        op: ClientWireOp.SendChatMessage,
-        caller_username: activeUsername,
-        peer_username: selectedPeer,
-        plaintext_message: text,
-      });
-      if (resp.ok) {
-        setMessageInput("");
-        setActiveChatPeers((prev) =>
-          prev.includes(selectedPeer) ? prev : [selectedPeer, ...prev]
-        );
-        await loadChatHistory(selectedPeer);
-      }
-    } finally {
-      setSending(false);
+    const nowMs = Date.now();
+    // 1. Мгновенно очищаем инпут (самолетик сразу улетает, капсула плавно сжимается без спиннера)
+    setMessageInput("");
+    setActiveChatPeers((prev) => (prev.includes(peer) ? prev : [peer, ...prev]));
+
+    // 2. Оптимистично добавляем сообщение в ленту чата и превью слева за 0 мс
+    const optimisticId = `opt-${nowMs}`;
+    setMessages((prev) => [
+      ...prev,
+      {
+        sender_username: activeUsername,
+        ratchet_step: prev.length + 1,
+        message_id_short: optimisticId,
+        timestamp_ms: nowMs,
+        is_read_by_peer: false,
+        decrypted_text: text,
+        wire_bytes_len: text.length,
+        nonce_hex: "",
+        ciphertext_hex: "",
+        signature_hex_short: "",
+      },
+    ]);
+    setChatSummaries((prev) => ({
+      ...prev,
+      [peer]: {
+        lastText: text,
+        timestampMs: nowMs,
+        isMine: true,
+        isReadByPeer: false,
+      },
+    }));
+
+    // 3. Отправляем бинарный Protobuf-конверт на шлюз
+    const resp = await callClientWireProtobuf({
+      op: ClientWireOp.SendChatMessage,
+      caller_username: activeUsername,
+      peer_username: peer,
+      plaintext_message: text,
+    });
+    if (resp.ok) {
+      void loadChatHistory(peer, false);
     }
   };
 
@@ -880,7 +924,6 @@ export const MessengerWorkspace: React.FC<MessengerWorkspaceProps> = ({
                     onChange={(e) => handleInputTyping(e.target.value)}
                     placeholder="Сообщение"
                     aria-label="Сообщение"
-                    disabled={sending}
                     className={cn(
                       "h-full min-w-0 flex-1 bg-transparent text-sm outline-none",
                       isDark
@@ -894,7 +937,6 @@ export const MessengerWorkspace: React.FC<MessengerWorkspaceProps> = ({
                       <motion.button
                         key="liquid-send-btn"
                         type="submit"
-                        disabled={sending}
                         aria-label="Отправить сообщение"
                         initial={{
                           width: 0,
@@ -929,11 +971,7 @@ export const MessengerWorkspace: React.FC<MessengerWorkspaceProps> = ({
                         whileTap={{ scale: 0.9 }}
                         className="flex h-8 shrink-0 items-center justify-center overflow-hidden rounded-full bg-sky-500 text-white shadow-md hover:bg-sky-400 cursor-pointer"
                       >
-                        {sending ? (
-                          <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin" />
-                        ) : (
-                          <OrigamiPaperPlaneIcon />
-                        )}
+                        <OrigamiPaperPlaneIcon />
                       </motion.button>
                     )}
                   </AnimatePresence>
