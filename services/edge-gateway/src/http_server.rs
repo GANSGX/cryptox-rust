@@ -88,6 +88,10 @@ pub struct LivePrototypeState {
     pub client_enclaves: DashMap<String, Arc<ClientDeviceEnclave>>,
     pub email_to_username: DashMap<String, String>,
     pub persisted_accounts: DashMap<String, PersistedUserAccountProto>,
+    /// Количество активных открытых WebSocket-вкладок по `username` для точного статуса «в сети».
+    pub active_ws_connections: DashMap<String, usize>,
+    /// Время последней активности пользователя (`last_seen_ms`).
+    pub last_seen_by_username: DashMap<String, u64>,
     /// Шина мгновенных WebSocket-событий для всех открытых вкладок/клиентов (`new_message`, `read_receipt`, `typing`).
     pub ws_event_bus: broadcast::Sender<String>,
     /// Бинарная Protobuf шина мгновенных WebSocket-событий (`ClientWireWsEventProto`).
@@ -113,6 +117,27 @@ impl LivePrototypeState {
             timestamp_ms: Self::now_ms(),
         };
         let _ = self.ws_proto_bus.send(ev.encode_to_vec());
+    }
+
+    #[must_use]
+    pub fn get_peer_presence(&self, username: &str, _now_ms: u64) -> (bool, u64) {
+        let is_ws_online = self
+            .active_ws_connections
+            .get(username)
+            .is_some_and(|c| *c.value() > 0);
+        let mut last_seen = self
+            .last_seen_by_username
+            .get(username)
+            .map_or(0, |r| *r.value());
+        if let Some(enclave) = self.client_enclaves.get(username)
+            && let Some(svc_seen) = self
+                .gateway
+                .presence_service()
+                .get_last_seen_ms(self.tenant_id, enclave.identity.user_id())
+        {
+            last_seen = last_seen.max(svc_seen);
+        }
+        (is_ws_online, last_seen)
     }
     #[must_use]
     pub fn resolve_identifier(&self, raw: &str) -> String {
@@ -161,6 +186,8 @@ impl LivePrototypeState {
             client_enclaves: DashMap::new(),
             email_to_username: DashMap::new(),
             persisted_accounts: DashMap::new(),
+            active_ws_connections: DashMap::new(),
+            last_seen_by_username: DashMap::new(),
             ws_event_bus,
             ws_proto_bus,
             auth_down: AtomicBool::new(false),
@@ -744,17 +771,43 @@ async fn api_protobuf_rpc(
 async fn handle_ws_connection(mut socket: WebSocket, state: Arc<LivePrototypeState>) {
     let mut rx = state.ws_event_bus.subscribe();
     let mut rx_proto = state.ws_proto_bus.subscribe();
+    let mut connected_user: Option<String> = None;
 
     loop {
         tokio::select! {
             incoming = socket.recv() => {
                 match incoming {
                     Some(Ok(WsMessage::Binary(bin_frame))) => {
-                        if let Ok(ws_ev) = ClientWireWsEventProto::decode(bin_frame.as_ref())
-                            && ws_ev.event_type == "typing"
-                        {
-                            let _ = state.ws_proto_bus.send(bin_frame.to_vec());
-                            continue;
+                        if let Ok(ws_ev) = ClientWireWsEventProto::decode(bin_frame.as_ref()) {
+                            let uname = state.resolve_identifier(&ws_ev.sender);
+                            if !uname.is_empty() && connected_user.is_none() {
+                                connected_user = Some(uname.clone());
+                                state
+                                    .active_ws_connections
+                                    .entry(uname.clone())
+                                    .and_modify(|c| *c = c.saturating_add(1))
+                                    .or_insert(1);
+                                let now_ms = LivePrototypeState::now_ms();
+                                state.last_seen_by_username.insert(uname.clone(), now_ms);
+                                if let Some(enc) = state.client_enclaves.get(&uname) {
+                                    let _ = state.gateway.presence_service().heartbeat_online(&enc.active_token, now_ms);
+                                }
+                                state.broadcast_proto_ws_event("presence_changed", &uname, "online", 0);
+                            }
+                            if ws_ev.event_type == "presence_online" {
+                                let now_ms = LivePrototypeState::now_ms();
+                                if !uname.is_empty() {
+                                    state.last_seen_by_username.insert(uname.clone(), now_ms);
+                                    if let Some(enc) = state.client_enclaves.get(&uname) {
+                                        let _ = state.gateway.presence_service().heartbeat_online(&enc.active_token, now_ms);
+                                    }
+                                }
+                                continue;
+                            }
+                            if ws_ev.event_type == "typing" {
+                                let _ = state.ws_proto_bus.send(bin_frame.to_vec());
+                                continue;
+                            }
                         }
                         let resp_wire = execute_binary_protobuf_rpc(&state, &bin_frame).await;
                         if socket.send(WsMessage::Binary(resp_wire.into())).await.is_err() {
@@ -792,6 +845,22 @@ async fn handle_ws_connection(mut socket: WebSocket, state: Arc<LivePrototypeSta
                     Err(broadcast::error::RecvError::Closed) => break,
                 }
             }
+        }
+    }
+
+    // При закрытии вкладки браузера уменьшаем счётчик активных подключений и рассылаем статус `offline`
+    if let Some(uname) = connected_user {
+        let now_ms = LivePrototypeState::now_ms();
+        state.last_seen_by_username.insert(uname.clone(), now_ms);
+        let mut is_now_zero = false;
+        if let Some(mut count) = state.active_ws_connections.get_mut(&uname) {
+            *count = count.saturating_sub(1);
+            if *count == 0 {
+                is_now_zero = true;
+            }
+        }
+        if is_now_zero {
+            state.broadcast_proto_ws_event("presence_changed", &uname, "offline", 0);
         }
     }
 }
@@ -1075,15 +1144,20 @@ fn handle_client_wire_proto_inner(
             let mut peers: Vec<ClientDirectoryPeerProto> = state
                 .client_enclaves
                 .iter()
-                .map(|r| ClientDirectoryPeerProto {
-                    username: r.username.clone(),
-                    display_name: r.display_name.clone(),
-                    key_version: 1,
-                    transparency_seq: 1,
-                    ed25519_pub_hex_short: String::new(),
-                    x25519_pub_hex_short: String::new(),
-                    device_number: r.device_number,
-                    vault_version: r.vault_version.load(Ordering::Relaxed),
+                .map(|r| {
+                    let (is_online, last_seen_ms) = state.get_peer_presence(&r.username, now_ms);
+                    ClientDirectoryPeerProto {
+                        username: r.username.clone(),
+                        display_name: r.display_name.clone(),
+                        key_version: 1,
+                        transparency_seq: 1,
+                        ed25519_pub_hex_short: String::new(),
+                        x25519_pub_hex_short: String::new(),
+                        device_number: r.device_number,
+                        vault_version: r.vault_version.load(Ordering::Relaxed),
+                        is_online,
+                        last_seen_ms,
+                    }
                 })
                 .collect();
             peers.sort_by(|a, b| a.username.cmp(&b.username));
@@ -1161,6 +1235,8 @@ fn handle_client_wire_proto_inner(
                                     .insert(entry.username.clone(), bundle.clone());
                                 let ed_hex = bytes_to_hex(&bundle.ed25519_verifying_key);
                                 let x_hex = bytes_to_hex(&bundle.x25519_public_key);
+                                let (is_online, last_seen_ms) =
+                                    state.get_peer_presence(&entry.username, now_ms);
                                 peers.push(ClientDirectoryPeerProto {
                                     username: entry.username,
                                     display_name: entry.display_name,
@@ -1171,6 +1247,8 @@ fn handle_client_wire_proto_inner(
                                     x25519_pub_hex_short: x_hex[..16.min(x_hex.len())].to_string(),
                                     device_number: 1,
                                     vault_version: 1,
+                                    is_online,
+                                    last_seen_ms,
                                 });
                             }
                         }
@@ -1191,6 +1269,8 @@ fn handle_client_wire_proto_inner(
                                     .insert(entry.username.clone(), bundle.clone());
                                 let ed_hex = bytes_to_hex(&bundle.ed25519_verifying_key);
                                 let x_hex = bytes_to_hex(&bundle.x25519_public_key);
+                                let (is_online, last_seen_ms) =
+                                    state.get_peer_presence(&entry.username, now_ms);
                                 peers.push(ClientDirectoryPeerProto {
                                     username: entry.username,
                                     display_name: entry.display_name,
@@ -1201,6 +1281,8 @@ fn handle_client_wire_proto_inner(
                                     x25519_pub_hex_short: x_hex[..16.min(x_hex.len())].to_string(),
                                     device_number: 1,
                                     vault_version: 1,
+                                    is_online,
+                                    last_seen_ms,
                                 });
                             }
                         }

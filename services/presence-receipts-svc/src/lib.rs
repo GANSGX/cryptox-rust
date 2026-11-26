@@ -144,4 +144,15 @@ impl PresenceReceiptsService {
             .insert((claims.tenant_id, claims.user_id), now_ms);
         Ok(())
     }
+
+    /// Возвращает время последней активности сотрудника (`last_seen_ms`) в `presence-receipts-svc`.
+    #[must_use]
+    pub fn get_last_seen_ms(&self, tenant_id: TenantId, user_id: UserId) -> Option<u64> {
+        if self.simulated_outage.load(Ordering::Relaxed) {
+            return None;
+        }
+        self.online_heartbeats
+            .get(&(tenant_id, user_id))
+            .map(|r| *r.value())
+    }
 }

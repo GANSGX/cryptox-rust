@@ -803,6 +803,10 @@ pub struct ClientDirectoryPeerProto {
     pub device_number: u32,
     #[prost(uint64, tag = "8")]
     pub vault_version: u64,
+    #[prost(bool, tag = "9")]
+    pub is_online: bool,
+    #[prost(uint64, tag = "10")]
+    pub last_seen_ms: u64,
 }
 
 #[derive(Clone, PartialEq, Eq, Message)]

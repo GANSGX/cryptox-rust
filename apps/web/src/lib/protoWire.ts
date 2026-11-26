@@ -39,6 +39,8 @@ export interface ClientDirectoryPeer {
   x25519_pub_hex_short: string;
   device_number: number;
   vault_version: number;
+  is_online: boolean;
+  last_seen_ms: number;
 }
 
 export interface ClientDecryptedMessageItem {
@@ -105,7 +107,9 @@ const ClientDirectoryPeerProtoType = new protobuf.Type("ClientDirectoryPeerProto
   .add(new protobuf.Field("ed25519_pub_hex_short", 5, "string"))
   .add(new protobuf.Field("x25519_pub_hex_short", 6, "string"))
   .add(new protobuf.Field("device_number", 7, "uint32"))
-  .add(new protobuf.Field("vault_version", 8, "uint64"));
+  .add(new protobuf.Field("vault_version", 8, "uint64"))
+  .add(new protobuf.Field("is_online", 9, "bool"))
+  .add(new protobuf.Field("last_seen_ms", 10, "uint64"));
 
 const ClientDecryptedMessageItemProtoType = new protobuf.Type("ClientDecryptedMessageItemProto")
   .add(new protobuf.Field("sender_username", 1, "string"))
@@ -212,6 +216,8 @@ export function decodeClientWireResponse(bytes: Uint8Array): ClientWireResponse 
       x25519_pub_hex_short: String(p.x25519_pub_hex_short ?? ""),
       device_number: toNum(p.device_number),
       vault_version: toNum(p.vault_version),
+      is_online: Boolean(p.is_online),
+      last_seen_ms: toNum(p.last_seen_ms),
     })),
     messages: rawMsgs.map((m: Record<string, unknown>) => ({
       sender_username: String(m.sender_username ?? ""),

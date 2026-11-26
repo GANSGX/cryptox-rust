@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import { motion } from "framer-motion";
+import { AnimatePresence, motion } from "framer-motion";
 import {
   Check,
   CheckCheck,
@@ -220,11 +220,39 @@ export const MessengerWorkspace: React.FC<MessengerWorkspaceProps> = ({
       ws.binaryType = "arraybuffer";
       wsRef.current = ws;
 
+      ws.onopen = () => {
+        if (!alive) return;
+        const hello = encodeWsProtoEvent({
+          event_type: "presence_online",
+          sender: activeUserRef.current,
+          recipient: "online",
+          wire_bytes_len: 0,
+          timestamp_ms: Date.now(),
+        });
+        ws.send(hello);
+      };
+
       ws.onmessage = (event) => {
         if (!alive) return;
         if (event.data instanceof ArrayBuffer) {
           const ev = decodeWsProtoEvent(event.data);
           if (!ev) return;
+
+          if (ev.event_type === "presence_changed") {
+            const isNowOnline = ev.recipient === "online";
+            setDirectoryPeers((prev) =>
+              prev.map((p) =>
+                p.username === ev.sender
+                  ? {
+                      ...p,
+                      is_online: isNowOnline,
+                      last_seen_ms: ev.timestamp_ms || Date.now(),
+                    }
+                  : p
+              )
+            );
+            return;
+          }
 
           if (ev.event_type === "new_message") {
             const currentActive = activeUserRef.current;
@@ -527,16 +555,18 @@ export const MessengerWorkspace: React.FC<MessengerWorkspaceProps> = ({
                       )}
                     >
                       {initials(peer.display_name || peer.username)}
-                      <span
-                        className={cn(
-                          "absolute bottom-0 right-0 h-3 w-3 rounded-full border-2 bg-emerald-500",
-                          isSelected
-                            ? "border-[#2b5278]"
-                            : isDark
-                              ? "border-[#0c0c10]"
-                              : "border-white"
-                        )}
-                      />
+                      {peer.is_online && (
+                        <span
+                          className={cn(
+                            "absolute bottom-0 right-0 h-3 w-3 rounded-full border-2 bg-emerald-500",
+                            isSelected
+                              ? "border-[#2b5278]"
+                              : isDark
+                                ? "border-[#15151b]"
+                                : "border-white"
+                          )}
+                        />
+                      )}
                     </div>
 
                     <div className="min-w-0 flex-1">
@@ -654,6 +684,8 @@ export const MessengerWorkspace: React.FC<MessengerWorkspaceProps> = ({
                 <span className="text-[11px] text-zinc-400">
                   {peerTyping[activePeerObj.username] ? (
                     <span className="font-medium text-sky-400">печатает...</span>
+                  ) : activePeerObj.is_online ? (
+                    <span className="font-medium text-emerald-400">в сети</span>
                   ) : (
                     "был(а) недавно"
                   )}
@@ -725,17 +757,30 @@ export const MessengerWorkspace: React.FC<MessengerWorkspaceProps> = ({
               <div ref={messagesEndRef} />
             </div>
 
-            {/* Нижняя капсула ввода сообщения */}
+            {/* Нижняя капсула ввода: при наборе текста плавно расширяется вправо каплей и внутри появляется кнопка отправки */}
             <footer className="relative z-10 shrink-0 px-8 pb-5 pt-2">
               <form
                 onSubmit={handleSendMessage}
-                className="mx-auto flex max-w-2xl items-center gap-2.5"
+                className="mx-auto flex w-full max-w-[640px] items-center justify-center"
               >
-                <div
+                <motion.div
+                  layout
+                  initial={false}
+                  animate={{
+                    width: messageInput.trim().length > 0 ? 624 : 568,
+                    paddingRight: messageInput.trim().length > 0 ? 6 : 20,
+                  }}
+                  transition={{
+                    type: "spring",
+                    stiffness: 380,
+                    damping: 26,
+                    mass: 0.72,
+                  }}
+                  style={{ originX: 0 }}
                   className={cn(
-                    "flex h-11 flex-1 items-center rounded-full border px-5 shadow-lg backdrop-blur-xl",
+                    "relative flex h-11 max-w-full items-center overflow-hidden rounded-full border pl-5 shadow-lg backdrop-blur-xl",
                     isDark
-                      ? "border-zinc-800/90 bg-[#17171f]/90"
+                      ? "border-zinc-800/90 bg-[#17171f]/92"
                       : "border-zinc-200/90 bg-white/95"
                   )}
                 >
@@ -747,33 +792,62 @@ export const MessengerWorkspace: React.FC<MessengerWorkspaceProps> = ({
                     aria-label="Сообщение"
                     disabled={sending}
                     className={cn(
-                      "h-full w-full bg-transparent text-sm outline-none",
+                      "h-full min-w-0 flex-1 bg-transparent text-sm outline-none",
                       isDark
                         ? "text-zinc-100 placeholder:text-zinc-500"
                         : "text-zinc-900 placeholder:text-zinc-400"
                     )}
                   />
-                </div>
 
-                <button
-                  type="submit"
-                  disabled={!messageInput.trim() || sending}
-                  aria-label="Отправить сообщение"
-                  className={cn(
-                    "flex h-11 w-11 shrink-0 items-center justify-center rounded-full border shadow-lg backdrop-blur-xl transition-all active:scale-95 cursor-pointer disabled:opacity-40",
-                    messageInput.trim()
-                      ? "border-sky-500 bg-sky-500 text-white"
-                      : isDark
-                        ? "border-zinc-800/90 bg-[#17171f]/90 text-zinc-400"
-                        : "border-zinc-200/90 bg-white/95 text-zinc-500"
-                  )}
-                >
-                  {sending ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                  ) : (
-                    <Send className="h-4 w-4" />
-                  )}
-                </button>
+                  <AnimatePresence initial={false}>
+                    {messageInput.trim().length > 0 && (
+                      <motion.button
+                        key="liquid-send-btn"
+                        type="submit"
+                        disabled={sending}
+                        aria-label="Отправить сообщение"
+                        initial={{
+                          width: 0,
+                          opacity: 0,
+                          scale: 0.15,
+                          x: 18,
+                          marginLeft: 0,
+                          filter: "blur(5px)",
+                        }}
+                        animate={{
+                          width: 32,
+                          opacity: 1,
+                          scale: 1,
+                          x: 0,
+                          marginLeft: 8,
+                          filter: "blur(0px)",
+                        }}
+                        exit={{
+                          width: 0,
+                          opacity: 0,
+                          scale: 0.15,
+                          x: 16,
+                          marginLeft: 0,
+                          filter: "blur(5px)",
+                        }}
+                        transition={{
+                          type: "spring",
+                          stiffness: 430,
+                          damping: 24,
+                          mass: 0.62,
+                        }}
+                        whileTap={{ scale: 0.9 }}
+                        className="flex h-8 shrink-0 items-center justify-center overflow-hidden rounded-full bg-sky-500 text-white shadow-md hover:bg-sky-400 cursor-pointer"
+                      >
+                        {sending ? (
+                          <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin" />
+                        ) : (
+                          <Send className="h-3.5 w-3.5 shrink-0 -translate-x-[0.5px] translate-y-[0.5px]" />
+                        )}
+                      </motion.button>
+                    )}
+                  </AnimatePresence>
+                </motion.div>
               </form>
             </footer>
           </>
