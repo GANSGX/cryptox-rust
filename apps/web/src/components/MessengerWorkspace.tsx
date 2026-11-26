@@ -621,7 +621,7 @@ export const MessengerWorkspace: React.FC<MessengerWorkspaceProps> = ({
         {/* Список личных чатов или пустое состояние с маскотами */}
         <div
           className={cn(
-            "flex-1 px-2 pb-3",
+            "flex-1 px-3 pb-3",
             visibleChats.length === 0 ? "overflow-hidden" : "overflow-y-auto"
           )}
         >
