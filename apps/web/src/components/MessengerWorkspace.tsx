@@ -561,7 +561,7 @@ export const MessengerWorkspace: React.FC<MessengerWorkspaceProps> = ({
   return (
     <div
       className={cn(
-        "relative flex h-full w-full overflow-hidden select-none p-3 gap-3",
+        "relative flex h-full w-full overflow-hidden select-none gap-3",
         isDark ? "bg-[#09090b] text-zinc-100" : "bg-[#f2f2f7] text-zinc-900"
       )}
     >
@@ -583,7 +583,7 @@ export const MessengerWorkspace: React.FC<MessengerWorkspaceProps> = ({
           ===================================================================== */}
       <aside
         className={cn(
-          "relative z-20 flex h-full w-[360px] shrink-0 flex-col overflow-hidden rounded-[24px] border shadow-2xl backdrop-blur-xl",
+          "relative z-20 my-3 ml-3 flex h-[calc(100%-24px)] w-[360px] shrink-0 flex-col overflow-hidden rounded-[24px] border shadow-2xl backdrop-blur-xl",
           isDark
             ? "border-zinc-800/80 bg-[#15151b]/95"
             : "border-zinc-200/90 bg-white/95"
@@ -802,11 +802,11 @@ export const MessengerWorkspace: React.FC<MessengerWorkspaceProps> = ({
           </div>
         ) : (
           <>
-            {/* Плавающая капсула собеседника сверху по центру */}
-            <header className="relative z-10 flex h-16 shrink-0 items-center justify-center px-6 pt-2">
+            {/* Плавающая капсула собеседника сверху по центру (поверх полновысотного скролла чата) */}
+            <header className="pointer-events-none absolute inset-x-0 top-3 z-20 flex items-center justify-center px-6">
               <div
                 className={cn(
-                  "flex min-w-[200px] flex-col items-center justify-center rounded-full border px-6 py-1.5 shadow-lg backdrop-blur-xl",
+                  "pointer-events-auto flex min-w-[200px] flex-col items-center justify-center rounded-full border px-6 py-1.5 shadow-lg backdrop-blur-xl",
                   isDark
                     ? "border-zinc-800/80 bg-[#17171f]/85"
                     : "border-zinc-200/80 bg-white/90"
@@ -827,10 +827,10 @@ export const MessengerWorkspace: React.FC<MessengerWorkspaceProps> = ({
               </div>
             </header>
 
-            {/* Область сообщений (при пустом чате overflow-hidden — никакого скроллбара!) */}
+            {/* Полновысотная область сообщений от самого верха до самого низа экрана (скроллбар во всю высоту окна!) */}
             <div
               className={cn(
-                "relative z-10 flex-1 px-8 py-4 space-y-2",
+                "relative z-10 h-full w-full px-8 pt-20 pb-24 space-y-2",
                 messages.length === 0 ? "overflow-hidden" : "overflow-y-auto"
               )}
             >
@@ -891,11 +891,11 @@ export const MessengerWorkspace: React.FC<MessengerWorkspaceProps> = ({
               <div ref={messagesEndRef} />
             </div>
 
-            {/* Нижняя капсула ввода: при наборе текста плавно расширяется вправо каплей и внутри появляется кнопка отправки */}
-            <footer className="relative z-10 shrink-0 px-8 pb-5 pt-2">
+            {/* Плавающая нижняя капсула ввода поверх полновысотной ленты сообщений */}
+            <footer className="pointer-events-none absolute inset-x-0 bottom-5 z-20 px-8">
               <form
                 onSubmit={handleSendMessage}
-                className="mx-auto flex w-full max-w-[640px] items-center justify-center"
+                className="pointer-events-auto mx-auto flex w-full max-w-[640px] items-center justify-center"
               >
                 <motion.div
                   layout
