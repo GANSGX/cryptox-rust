@@ -466,6 +466,47 @@ async fn test_cold_reboot_account_email_password_and_chat_persistence_in_redb() 
             "Сообщение переживёт полный перезапуск сервера!"
         );
 
+        // 4. Отправка НОВОГО сообщения после холодного перезапуска НЕ затирает старые сообщения с диска!
+        let send_after_reboot = call_proto(ClientWireRequestProto {
+            op: ClientWireOp::SendChatMessage as i32,
+            caller_username: "vadim_dev".to_string(),
+            peer_username: "alice_ceo".to_string(),
+            plaintext_message: "Второе сообщение уже после перезапуска сервера!".to_string(),
+            ..ClientWireRequestProto::default()
+        })
+        .await;
+        assert!(
+            send_after_reboot.ok,
+            "Отправка после ребута: {}",
+            send_after_reboot.error_message
+        );
+
+        let hist_after_send = call_proto(ClientWireRequestProto {
+            op: ClientWireOp::FetchChatHistory as i32,
+            caller_username: "vadim_dev".to_string(),
+            peer_username: "alice_ceo".to_string(),
+            ..ClientWireRequestProto::default()
+        })
+        .await;
+        assert!(
+            hist_after_send.ok,
+            "История после отправки нового сообщения: {}",
+            hist_after_send.error_message
+        );
+        assert_eq!(
+            hist_after_send.messages.len(),
+            2,
+            "Оба сообщения (старое с диска и новое из RAM+диска) должны присутствовать!"
+        );
+        assert_eq!(
+            hist_after_send.messages[0].decrypted_text,
+            "Сообщение переживёт полный перезапуск сервера!"
+        );
+        assert_eq!(
+            hist_after_send.messages[1].decrypted_text,
+            "Второе сообщение уже после перезапуска сервера!"
+        );
+
         server_task.abort();
     }
 }

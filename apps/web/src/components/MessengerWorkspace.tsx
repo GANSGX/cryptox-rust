@@ -152,6 +152,7 @@ export const MessengerWorkspace: React.FC<MessengerWorkspaceProps> = ({
   // Список личных чатов, в которых уже есть переписка или которые открыл пользователь
   const [activeChatPeers, setActiveChatPeers] = useState<string[]>([]);
   const [chatSummaries, setChatSummaries] = useState<Record<string, PeerChatSummary>>({});
+  const [isInitialChatsLoaded, setIsInitialChatsLoaded] = useState<boolean>(false);
 
   const [messages, setMessages] = useState<ClientDecryptedMessageItem[]>([]);
   const [messageInput, setMessageInput] = useState<string>("");
@@ -170,35 +171,38 @@ export const MessengerWorkspace: React.FC<MessengerWorkspaceProps> = ({
   selectedPeerRef.current = selectedPeer;
   activeUserRef.current = activeUsername;
 
-  // Подгрузка существующих переписок для формирования списка личных чатов
+  // Параллельная подгрузка существующих переписок для формирования списка личных чатов без задержек
   const syncPeerSummaries = useCallback(async (peers: ClientDirectoryPeer[]) => {
     const caller = activeUserRef.current;
     if (!caller) return;
     const nextSummaries: Record<string, PeerChatSummary> = {};
     const peersWithHistory: string[] = [];
 
-    for (const p of peers) {
-      if (p.username === caller) continue;
-      try {
-        const hist = await callClientWireProtobuf({
-          op: ClientWireOp.FetchChatHistory,
-          caller_username: caller,
-          peer_username: p.username,
-        });
-        if (hist.ok && hist.messages.length > 0) {
-          const last = hist.messages[hist.messages.length - 1];
-          nextSummaries[p.username] = {
-            lastText: last.decrypted_text,
-            timestampMs: last.timestamp_ms,
-            isMine: last.sender_username === caller,
-            isReadByPeer: last.is_read_by_peer,
-          };
-          peersWithHistory.push(p.username);
-        }
-      } catch {
-        // Пропускаем
-      }
-    }
+    await Promise.all(
+      peers
+        .filter((p) => p.username !== caller)
+        .map(async (p) => {
+          try {
+            const hist = await callClientWireProtobuf({
+              op: ClientWireOp.FetchChatHistory,
+              caller_username: caller,
+              peer_username: p.username,
+            });
+            if (hist.ok && hist.messages.length > 0) {
+              const last = hist.messages[hist.messages.length - 1];
+              nextSummaries[p.username] = {
+                lastText: last.decrypted_text,
+                timestampMs: last.timestamp_ms,
+                isMine: last.sender_username === caller,
+                isReadByPeer: last.is_read_by_peer,
+              };
+              peersWithHistory.push(p.username);
+            }
+          } catch {
+            // Пропускаем
+          }
+        })
+    );
 
     setChatSummaries((prev) => ({ ...prev, ...nextSummaries }));
     if (peersWithHistory.length > 0) {
@@ -222,13 +226,15 @@ export const MessengerWorkspace: React.FC<MessengerWorkspaceProps> = ({
           const others = resp.peers.filter(
             (p) => p.username !== activeUserRef.current
           );
+          await syncPeerSummaries(others);
           setDirectoryPeers(others);
-          void syncPeerSummaries(others);
         } else if (resp.error_message.includes("не найден")) {
           onLogout?.();
         }
       } catch {
         // Игнорируем ошибку сети
+      } finally {
+        setIsInitialChatsLoaded(true);
       }
     },
     [onLogout, syncPeerSummaries]
@@ -575,7 +581,7 @@ export const MessengerWorkspace: React.FC<MessengerWorkspaceProps> = ({
             visibleChats.length === 0 ? "overflow-hidden" : "overflow-y-auto"
           )}
         >
-          {visibleChats.length === 0 ? (
+          {visibleChats.length === 0 && isInitialChatsLoaded && (
             <div className="flex h-full flex-col items-center justify-center px-6 text-center">
               <motion.div
                 initial={{ opacity: 0, scale: 0.96 }}
@@ -609,7 +615,8 @@ export const MessengerWorkspace: React.FC<MessengerWorkspaceProps> = ({
                 </p>
               </motion.div>
             </div>
-          ) : (
+          )}
+          {visibleChats.length > 0 && (
             <div className="space-y-0.5 pt-0.5">
               {visibleChats.map((peer) => {
                 const isSelected = peer.username === selectedPeer;

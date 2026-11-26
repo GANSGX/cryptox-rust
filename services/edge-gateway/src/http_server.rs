@@ -386,6 +386,73 @@ impl LivePrototypeState {
         }
     }
 
+    /// Объединяет историю канала из оперативной памяти (`messaging-svc`) и зашифрованного
+    /// дискового B+Tree индекса (`redb`) по ключу `MessageId (UUIDv7)`.
+    /// Гарантирует, что после перезапуска сервера и отправки новых сообщений старая история с диска
+    /// никогда не затирается и всегда возвращается в строгом хронологическом порядке без дублей.
+    pub fn fetch_merged_channel_history(
+        &self,
+        token: &SignedSessionToken,
+        channel_id: ChannelId,
+        before_cursor: Option<MessageId>,
+        limit: usize,
+        now_ms: u64,
+    ) -> Result<cryptox_proto::ChannelHistoryPageProto, String> {
+        let ram_page = self
+            .gateway
+            .handle_fetch_history(token, channel_id, before_cursor, limit, now_ms)
+            .map_err(|e| e.to_string())?;
+
+        let Some(storage) = &self.disk_storage else {
+            return Ok(ram_page);
+        };
+
+        let Ok(disk_page) =
+            storage.fetch_channel_history_from_disk(self.tenant_id, channel_id, before_cursor, limit)
+        else {
+            return Ok(ram_page);
+        };
+
+        if disk_page.envelopes.is_empty() {
+            return Ok(ram_page);
+        }
+        if ram_page.envelopes.is_empty() {
+            return Ok(disk_page);
+        }
+
+        let mut merged_by_id: std::collections::BTreeMap<
+            MessageId,
+            cryptox_proto::EncryptedEnvelope,
+        > = std::collections::BTreeMap::new();
+
+        for env in disk_page.envelopes.into_iter().chain(ram_page.envelopes) {
+            if let Ok(mid) = MessageId::from_slice(&env.message_id) {
+                merged_by_id.insert(mid, env);
+            }
+        }
+
+        let total = merged_by_id.len();
+        let skip_count = total.saturating_sub(limit);
+        let envelopes: Vec<cryptox_proto::EncryptedEnvelope> =
+            merged_by_id.into_values().skip(skip_count).collect();
+        let has_more = disk_page.has_more || ram_page.has_more || total > limit;
+        let next_before_cursor = if has_more {
+            envelopes
+                .first()
+                .map(|first| first.message_id.clone())
+                .unwrap_or_default()
+        } else {
+            Vec::new()
+        };
+
+        Ok(cryptox_proto::ChannelHistoryPageProto {
+            channel_id: channel_id.to_vec(),
+            envelopes,
+            next_before_cursor,
+            has_more,
+        })
+    }
+
     #[must_use]
     pub fn now_ms() -> u64 {
         SystemTime::now()
@@ -1458,7 +1525,7 @@ fn handle_client_wire_proto_inner(
             let channel_id = session_ref.channel_id();
             let peer_user_id = session_ref.peer_user_id();
 
-            let Ok(mut history_page) = state.gateway.handle_fetch_history(
+            let Ok(history_page) = state.fetch_merged_channel_history(
                 &caller.active_token,
                 channel_id,
                 None,
@@ -1467,14 +1534,6 @@ fn handle_client_wire_proto_inner(
             ) else {
                 return proto_err_resp("Ошибка чтения истории чата");
             };
-
-            if history_page.envelopes.is_empty()
-                && let Some(storage) = &state.disk_storage
-                && let Ok(disk_page) =
-                    storage.fetch_channel_history_from_disk(state.tenant_id, channel_id, None, 50)
-            {
-                history_page = disk_page;
-            }
 
             let peer_read_watermark_bytes: Option<Vec<u8>> = state
                 .gateway
@@ -1560,23 +1619,14 @@ fn handle_client_wire_proto_inner(
                 peer_enclave.identity.user_id(),
             );
 
-            let mut history_page = state
-                .gateway
-                .handle_fetch_history(&caller.active_token, channel_id, None, 10, now_ms)
+            let history_page = state
+                .fetch_merged_channel_history(&caller.active_token, channel_id, None, 10, now_ms)
                 .unwrap_or(cryptox_proto::ChannelHistoryPageProto {
                     channel_id: channel_id.to_vec(),
                     envelopes: Vec::new(),
                     next_before_cursor: Vec::new(),
                     has_more: false,
                 });
-
-            if history_page.envelopes.is_empty()
-                && let Some(storage) = &state.disk_storage
-                && let Ok(disk_page) =
-                    storage.fetch_channel_history_from_disk(state.tenant_id, channel_id, None, 10)
-            {
-                history_page = disk_page;
-            }
 
             if let Some(last_env) = history_page.envelopes.last()
                 && let Ok(last_msg_id) = MessageId::from_slice(&last_env.message_id)
@@ -2490,7 +2540,7 @@ async fn api_mark_chat_read(
     };
     let channel_id = sess_ref.channel_id();
 
-    if let Ok(hist) = state.gateway.handle_fetch_history(
+    if let Ok(hist) = state.fetch_merged_channel_history(
         &reader.active_token,
         channel_id,
         None,
@@ -2598,8 +2648,8 @@ async fn api_chat_history(
     let channel_id: ChannelId = session_ref.channel_id();
     let peer_user_id: UserId = session_ref.peer_user_id();
 
-    // Читаем историю из `messaging-svc`, а также проверяем 48-байтный дисковый индекс `cryptox-storage`
-    let mut history_page = match state.gateway.handle_fetch_history(
+    // Читаем объединённую историю из `messaging-svc` и 48-байтного дискового индекса `cryptox-storage`
+    let history_page = match state.fetch_merged_channel_history(
         &caller.active_token,
         channel_id,
         None,
@@ -2610,18 +2660,10 @@ async fn api_chat_history(
         Err(e) => {
             return (
                 StatusCode::BAD_REQUEST,
-                Json(serde_json::json!({ "error": e.to_string() })),
+                Json(serde_json::json!({ "error": e })),
             )
         }
     };
-
-    if history_page.envelopes.is_empty()
-        && let Some(storage) = &state.disk_storage
-        && let Ok(disk_page) =
-            storage.fetch_channel_history_from_disk(state.tenant_id, channel_id, None, 50)
-    {
-        history_page = disk_page;
-    }
 
     // Проверяем водораздел прочтения собеседником (`peer_read_up_to`) для отображения двойных галочек `✓✓`
     let peer_read_watermark_bytes: Option<Vec<u8>> = state
