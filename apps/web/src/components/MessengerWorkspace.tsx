@@ -5,7 +5,6 @@ import {
   CheckCheck,
   Loader2,
   Search,
-  Send,
   X,
 } from "lucide-react";
 import { type WallpaperVariant } from "./TelegramPatternWallpapers";
@@ -54,6 +53,90 @@ function avatarGradientFor(username: string): string {
   }
   return AVATAR_GRADIENTS[Math.abs(hash) % AVATAR_GRADIENTS.length];
 }
+
+/**
+ * Анимированный SVG-самолётик оригами:
+ * при появлении кнопки раскладывает левое и правое крыло из центрального бумажного сгиба,
+ * а при отправке — взлетает по диагонали вперёд.
+ */
+const OrigamiPaperPlaneIcon: React.FC = () => (
+  <motion.svg
+    width="17"
+    height="17"
+    viewBox="0 0 24 24"
+    fill="none"
+    xmlns="http://www.w3.org/2000/svg"
+    className="shrink-0 overflow-visible"
+    initial={{ scale: 0.45, rotate: -32, x: -4, y: 4 }}
+    animate={{ scale: 1, rotate: 0, x: 0, y: 0 }}
+    exit={{ scale: 0.55, x: 18, y: -18, opacity: 0 }}
+    transition={{
+      type: "spring",
+      stiffness: 320,
+      damping: 20,
+      mass: 0.65,
+    }}
+  >
+    {/* Внутренняя теневая складка фюзеляжа оригами */}
+    <motion.path
+      d="M21 3L9.6 14.4L12.1 20.2L15.2 16.1L21 3Z"
+      fill="rgba(255,255,255,0.52)"
+      initial={{ opacity: 0, scale: 0.3 }}
+      animate={{ opacity: 1, scale: 1 }}
+      transition={{ delay: 0.08, duration: 0.24, ease: "easeOut" }}
+      style={{ transformOrigin: "14px 11px" }}
+    />
+
+    {/* Левое (верхнее) крыло — раскладывается вверх-влево из линии сгиба */}
+    <motion.path
+      d="M21 3L2.4 10.1L9.6 14.4L21 3Z"
+      fill="rgba(255,255,255,0.96)"
+      stroke="white"
+      strokeWidth="1.15"
+      strokeLinejoin="round"
+      initial={{ rotate: 38, scaleY: 0.12, opacity: 0.15 }}
+      animate={{ rotate: 0, scaleY: 1, opacity: 1 }}
+      transition={{
+        type: "spring",
+        stiffness: 250,
+        damping: 15,
+        mass: 0.6,
+        delay: 0.1,
+      }}
+      style={{ transformOrigin: "14px 10px" }}
+    />
+
+    {/* Правое (нижнее) крыло — раскладывается вниз-вправо из линии сгиба */}
+    <motion.path
+      d="M21 3L9.6 14.4L16.3 21.4L21 3Z"
+      fill="rgba(255,255,255,0.82)"
+      stroke="white"
+      strokeWidth="1.15"
+      strokeLinejoin="round"
+      initial={{ rotate: -38, scaleX: 0.12, opacity: 0.15 }}
+      animate={{ rotate: 0, scaleX: 1, opacity: 1 }}
+      transition={{
+        type: "spring",
+        stiffness: 250,
+        damping: 15,
+        mass: 0.6,
+        delay: 0.16,
+      }}
+      style={{ transformOrigin: "14px 10px" }}
+    />
+
+    {/* Центральный диагональный сгиб бумаги от хвоста к носу */}
+    <motion.path
+      d="M9.6 14.4L21 3"
+      stroke="#0284c7"
+      strokeWidth="1.35"
+      strokeLinecap="round"
+      initial={{ pathLength: 0, opacity: 0 }}
+      animate={{ pathLength: 1, opacity: 0.85 }}
+      transition={{ delay: 0.14, duration: 0.28, ease: "easeOut" }}
+    />
+  </motion.svg>
+);
 
 export const MessengerWorkspace: React.FC<MessengerWorkspaceProps> = ({
   activeUsername,
@@ -842,7 +925,7 @@ export const MessengerWorkspace: React.FC<MessengerWorkspaceProps> = ({
                         {sending ? (
                           <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin" />
                         ) : (
-                          <Send className="h-3.5 w-3.5 shrink-0 -translate-x-[0.5px] translate-y-[0.5px]" />
+                          <OrigamiPaperPlaneIcon />
                         )}
                       </motion.button>
                     )}
