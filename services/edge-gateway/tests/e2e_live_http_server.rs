@@ -553,27 +553,68 @@ async fn test_cold_reboot_account_email_password_and_chat_persistence_in_redb() 
             "Сообщение переживёт полный перезапуск сервера!"
         );
 
-        // Удаляем второе сообщение из RAM и с диска redb
+        // Удаляем второе сообщение: сначала проверяем удаление ТОЛЬКО У СЕБЯ (`delete_for_everyone: false`),
+        // чтобы у собеседника (`alice_ceo`) оно осталось, а затем удаляем у обоих (`delete_for_everyone: true`)!
         let second_msg_short_id = hist_after_edit.messages[1].message_id_short.clone();
-        let del_resp = call_proto(ClientWireRequestProto {
+        let del_self_resp = call_proto(ClientWireRequestProto {
             op: ClientWireOp::DeleteChatMessage as i32,
             caller_username: "vadim_dev".to_string(),
             peer_username: "alice_ceo".to_string(),
-            target_message_id_short: second_msg_short_id,
+            target_message_id_short: second_msg_short_id.clone(),
+            delete_for_everyone: false,
             ..ClientWireRequestProto::default()
         })
         .await;
-        assert!(del_resp.ok, "Delete message: {}", del_resp.error_message);
+        assert!(
+            del_self_resp.ok,
+            "Delete for self: {}",
+            del_self_resp.error_message
+        );
 
-        let hist_after_del = call_proto(ClientWireRequestProto {
+        // У vadim_dev осталось 2 сообщения, а у alice_ceo — всё ещё все 3 сообщения!
+        let hist_vadim = call_proto(ClientWireRequestProto {
             op: ClientWireOp::FetchChatHistory as i32,
             caller_username: "vadim_dev".to_string(),
             peer_username: "alice_ceo".to_string(),
             ..ClientWireRequestProto::default()
         })
         .await;
-        assert!(hist_after_del.ok);
-        assert_eq!(hist_after_del.messages.len(), 2);
+        assert_eq!(hist_vadim.messages.len(), 2);
+
+        let hist_alice = call_proto(ClientWireRequestProto {
+            op: ClientWireOp::FetchChatHistory as i32,
+            caller_username: "alice_ceo".to_string(),
+            peer_username: "vadim_dev".to_string(),
+            ..ClientWireRequestProto::default()
+        })
+        .await;
+        assert_eq!(hist_alice.messages.len(), 3);
+
+        // Теперь удаляем третье сообщение У ОБОИХ (`delete_for_everyone: true`)
+        let third_msg_short_id = hist_alice.messages[2].message_id_short.clone();
+        let del_all_resp = call_proto(ClientWireRequestProto {
+            op: ClientWireOp::DeleteChatMessage as i32,
+            caller_username: "vadim_dev".to_string(),
+            peer_username: "alice_ceo".to_string(),
+            target_message_id_short: third_msg_short_id,
+            delete_for_everyone: true,
+            ..ClientWireRequestProto::default()
+        })
+        .await;
+        assert!(
+            del_all_resp.ok,
+            "Delete for everyone: {}",
+            del_all_resp.error_message
+        );
+
+        let hist_alice_after = call_proto(ClientWireRequestProto {
+            op: ClientWireOp::FetchChatHistory as i32,
+            caller_username: "alice_ceo".to_string(),
+            peer_username: "vadim_dev".to_string(),
+            ..ClientWireRequestProto::default()
+        })
+        .await;
+        assert_eq!(hist_alice_after.messages.len(), 2);
 
         server_task.abort();
     }

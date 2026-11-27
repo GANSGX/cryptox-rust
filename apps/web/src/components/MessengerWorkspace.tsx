@@ -236,9 +236,12 @@ export const MessengerWorkspace: React.FC<MessengerWorkspaceProps> = ({
   const [messages, setMessages] = useState<ClientDecryptedMessageItem[]>([]);
   const [messageInput, setMessageInput] = useState<string>("");
 
-  // Контекстное меню ПКМ по сообщению, состояния Ответа (Reply), Редактирования (Edit) и подсветки цитаты
+  // Контекстное меню ПКМ по сообщению, модалка удаления как в ТГ, состояния Ответа (Reply) и Редактирования (Edit)
   const [contextMenu, setContextMenu] =
     useState<MessageContextMenuState | null>(null);
+  const [deleteModalMessage, setDeleteModalMessage] =
+    useState<ClientDecryptedMessageItem | null>(null);
+  const [deleteForEveryone, setDeleteForEveryone] = useState<boolean>(true);
   const [replyingToMessage, setReplyingToMessage] =
     useState<ClientDecryptedMessageItem | null>(null);
   const [editingMessage, setEditingMessage] =
@@ -425,7 +428,9 @@ export const MessengerWorkspace: React.FC<MessengerWorkspaceProps> = ({
     };
     const handleKeyDown = (ev: KeyboardEvent) => {
       if (ev.key === "Escape") {
-        if (contextMenu) {
+        if (deleteModalMessage) {
+          setDeleteModalMessage(null);
+        } else if (contextMenu) {
           setContextMenu(null);
         } else if (editingMessage) {
           setEditingMessage(null);
@@ -441,7 +446,7 @@ export const MessengerWorkspace: React.FC<MessengerWorkspaceProps> = ({
       window.removeEventListener("click", handleGlobalClick);
       window.removeEventListener("keydown", handleKeyDown);
     };
-  }, [contextMenu, editingMessage, replyingToMessage]);
+  }, [contextMenu, deleteModalMessage, editingMessage, replyingToMessage]);
 
   // Умная автопрокрутка: скроллит вниз при открытии чата, отправке своего сообщения или если юзер уже внизу ленты
   useEffect(() => {
@@ -677,10 +682,18 @@ export const MessengerWorkspace: React.FC<MessengerWorkspaceProps> = ({
     }, 10);
   };
 
-  const handleDeleteMessage = async (msg: ClientDecryptedMessageItem) => {
+  const handleOpenDeleteModal = (msg: ClientDecryptedMessageItem) => {
     setContextMenu(null);
+    setDeleteForEveryone(true);
+    setDeleteModalMessage(msg);
+  };
+
+  const handleConfirmDeleteMessage = async () => {
+    const msg = deleteModalMessage;
+    const forEveryone = deleteForEveryone;
+    setDeleteModalMessage(null);
     const peer = selectedPeer;
-    if (!peer) return;
+    if (!msg || !peer) return;
 
     if (replyingToMessage?.message_id_short === msg.message_id_short) {
       setReplyingToMessage(null);
@@ -714,6 +727,7 @@ export const MessengerWorkspace: React.FC<MessengerWorkspaceProps> = ({
         caller_username: activeUsername,
         peer_username: peer,
         target_message_id_short: msg.message_id_short,
+        delete_for_everyone: forEveryone,
       });
       if (resp.ok) {
         void loadChatHistory(peer, false);
@@ -1375,14 +1389,14 @@ export const MessengerWorkspace: React.FC<MessengerWorkspaceProps> = ({
               )}
             </AnimatePresence>
 
-            {/* Контекстное меню ПКМ по сообщению (Ответить / Копировать / Изменить / Удалить) */}
+            {/* Контекстное меню ПКМ по сообщению (в точном монохромном стиле Telegram Desktop на ПК) */}
             <AnimatePresence>
               {contextMenu && (
                 <motion.div
                   key="msg-context-menu"
-                  initial={{ opacity: 0, scale: 0.9, y: 4 }}
+                  initial={{ opacity: 0, scale: 0.92, y: 4 }}
                   animate={{ opacity: 1, scale: 1, y: 0 }}
-                  exit={{ opacity: 0, scale: 0.92, y: 4 }}
+                  exit={{ opacity: 0, scale: 0.94, y: 4 }}
                   transition={{
                     type: "spring",
                     stiffness: 460,
@@ -1395,9 +1409,9 @@ export const MessengerWorkspace: React.FC<MessengerWorkspaceProps> = ({
                   }}
                   onClick={(ev) => ev.stopPropagation()}
                   className={cn(
-                    "fixed z-50 w-48 overflow-hidden rounded-2xl border p-1.5 shadow-2xl backdrop-blur-2xl",
+                    "fixed z-50 w-52 overflow-hidden rounded-xl border py-1.5 shadow-2xl backdrop-blur-2xl",
                     isDark
-                      ? "border-zinc-800/90 bg-[#171720]/95 text-zinc-100"
+                      ? "border-zinc-800/80 bg-[#17212b]/95 text-zinc-100"
                       : "border-zinc-200/90 bg-white/95 text-zinc-800"
                   )}
                 >
@@ -1405,24 +1419,17 @@ export const MessengerWorkspace: React.FC<MessengerWorkspaceProps> = ({
                     type="button"
                     onClick={() => handleStartReply(contextMenu.message)}
                     className={cn(
-                      "flex w-full items-center gap-2.5 rounded-xl px-3 py-2 text-left text-xs font-medium transition-colors cursor-pointer",
-                      isDark ? "hover:bg-zinc-800/80" : "hover:bg-zinc-100"
+                      "flex w-full items-center gap-4 px-4 py-2 text-left text-[13.5px] font-normal transition-colors cursor-pointer",
+                      isDark ? "hover:bg-white/[0.06]" : "hover:bg-zinc-100"
                     )}
                   >
-                    <Reply className="h-3.5 w-3.5 text-sky-400" />
+                    <Reply
+                      className={cn(
+                        "h-[18px] w-[18px] shrink-0 stroke-[1.75]",
+                        isDark ? "text-zinc-300" : "text-zinc-600"
+                      )}
+                    />
                     <span>Ответить</span>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => handleCopyMessageText(contextMenu.message)}
-                    className={cn(
-                      "flex w-full items-center gap-2.5 rounded-xl px-3 py-2 text-left text-xs font-medium transition-colors cursor-pointer",
-                      isDark ? "hover:bg-zinc-800/80" : "hover:bg-zinc-100"
-                    )}
-                  >
-                    <Copy className="h-3.5 w-3.5 text-zinc-400" />
-                    <span>Копировать текст</span>
                   </button>
 
                   {contextMenu.message.sender_username === activeUsername &&
@@ -1431,33 +1438,145 @@ export const MessengerWorkspace: React.FC<MessengerWorkspaceProps> = ({
                         type="button"
                         onClick={() => handleStartEdit(contextMenu.message)}
                         className={cn(
-                          "flex w-full items-center gap-2.5 rounded-xl px-3 py-2 text-left text-xs font-medium transition-colors cursor-pointer",
-                          isDark ? "hover:bg-zinc-800/80" : "hover:bg-zinc-100"
+                          "flex w-full items-center gap-4 px-4 py-2 text-left text-[13.5px] font-normal transition-colors cursor-pointer",
+                          isDark ? "hover:bg-white/[0.06]" : "hover:bg-zinc-100"
                         )}
                       >
-                        <Pencil className="h-3.5 w-3.5 text-amber-400" />
+                        <Pencil
+                          className={cn(
+                            "h-[18px] w-[18px] shrink-0 stroke-[1.75]",
+                            isDark ? "text-zinc-300" : "text-zinc-600"
+                          )}
+                        />
                         <span>Изменить</span>
                       </button>
                     )}
 
-                  <div
+                  <button
+                    type="button"
+                    onClick={() => handleCopyMessageText(contextMenu.message)}
                     className={cn(
-                      "my-1 h-px",
-                      isDark ? "bg-zinc-800/80" : "bg-zinc-200/80"
+                      "flex w-full items-center gap-4 px-4 py-2 text-left text-[13.5px] font-normal transition-colors cursor-pointer",
+                      isDark ? "hover:bg-white/[0.06]" : "hover:bg-zinc-100"
                     )}
-                  />
+                  >
+                    <Copy
+                      className={cn(
+                        "h-[18px] w-[18px] shrink-0 stroke-[1.75]",
+                        isDark ? "text-zinc-300" : "text-zinc-600"
+                      )}
+                    />
+                    <span>Копировать текст</span>
+                  </button>
 
                   <button
                     type="button"
-                    onClick={() => void handleDeleteMessage(contextMenu.message)}
+                    onClick={() => handleOpenDeleteModal(contextMenu.message)}
                     className={cn(
-                      "flex w-full items-center gap-2.5 rounded-xl px-3 py-2 text-left text-xs font-medium text-rose-400 transition-colors cursor-pointer",
-                      isDark ? "hover:bg-rose-500/15" : "hover:bg-rose-50"
+                      "flex w-full items-center gap-4 px-4 py-2 text-left text-[13.5px] font-normal transition-colors cursor-pointer",
+                      isDark ? "hover:bg-white/[0.06]" : "hover:bg-zinc-100"
                     )}
                   >
-                    <Trash2 className="h-3.5 w-3.5" />
+                    <Trash2
+                      className={cn(
+                        "h-[18px] w-[18px] shrink-0 stroke-[1.75]",
+                        isDark ? "text-zinc-300" : "text-zinc-600"
+                      )}
+                    />
                     <span>Удалить</span>
                   </button>
+                </motion.div>
+              )}
+            </AnimatePresence>
+
+            {/* Модальное окно подтверждения удаления сообщения как в Telegram (с галочкой «Также удалить для ...») */}
+            <AnimatePresence>
+              {deleteModalMessage && (
+                <motion.div
+                  key="delete-confirm-backdrop"
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  exit={{ opacity: 0 }}
+                  transition={{ duration: 0.15 }}
+                  onClick={() => setDeleteModalMessage(null)}
+                  className="fixed inset-0 z-50 flex items-center justify-center bg-black/55 px-4 backdrop-blur-xs"
+                >
+                  <motion.div
+                    initial={{ opacity: 0, scale: 0.92, y: 8 }}
+                    animate={{ opacity: 1, scale: 1, y: 0 }}
+                    exit={{ opacity: 0, scale: 0.94, y: 8 }}
+                    transition={{
+                      type: "spring",
+                      stiffness: 440,
+                      damping: 30,
+                      mass: 0.6,
+                    }}
+                    onClick={(ev) => ev.stopPropagation()}
+                    className={cn(
+                      "w-full max-w-[340px] rounded-2xl border p-5 shadow-2xl",
+                      isDark
+                        ? "border-zinc-800/90 bg-[#17212b] text-zinc-100"
+                        : "border-zinc-200 bg-white text-zinc-900"
+                    )}
+                  >
+                    <h3 className="text-[16px] font-semibold">
+                      Удалить сообщение
+                    </h3>
+                    <p
+                      className={cn(
+                        "mt-2 text-[13.5px] leading-relaxed",
+                        isDark ? "text-zinc-300" : "text-zinc-600"
+                      )}
+                    >
+                      Вы точно хотите удалить это сообщение?
+                    </p>
+
+                    <label className="mt-4 flex items-center gap-3 select-none cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={deleteForEveryone}
+                        onChange={(e) =>
+                          setDeleteForEveryone(e.target.checked)
+                        }
+                        className="h-4 w-4 rounded border-zinc-600 accent-sky-500 cursor-pointer"
+                      />
+                      <span
+                        className={cn(
+                          "text-[13.5px]",
+                          isDark ? "text-zinc-200" : "text-zinc-800"
+                        )}
+                      >
+                        Также удалить для {activePeerObj.display_name}
+                      </span>
+                    </label>
+
+                    <div className="mt-5 flex items-center justify-end gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setDeleteModalMessage(null)}
+                        className={cn(
+                          "rounded-xl px-4 py-2 text-[13.5px] font-medium transition-colors cursor-pointer",
+                          isDark
+                            ? "text-sky-400 hover:bg-sky-500/10"
+                            : "text-sky-600 hover:bg-sky-50"
+                        )}
+                      >
+                        Отмена
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => void handleConfirmDeleteMessage()}
+                        className={cn(
+                          "rounded-xl px-4 py-2 text-[13.5px] font-medium text-rose-400 transition-colors cursor-pointer",
+                          isDark
+                            ? "hover:bg-rose-500/15"
+                            : "text-rose-600 hover:bg-rose-50"
+                        )}
+                      >
+                        Удалить
+                      </button>
+                    </div>
+                  </motion.div>
                 </motion.div>
               )}
             </AnimatePresence>

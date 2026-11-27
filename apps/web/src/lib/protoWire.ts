@@ -34,6 +34,7 @@ export interface ClientWireRequest {
   reply_to_message_id_short?: string;
   reply_to_sender?: string;
   reply_to_text?: string;
+  delete_for_everyone?: boolean;
 }
 
 export interface ClientDirectoryPeer {
@@ -111,7 +112,8 @@ const ClientWireRequestProtoType = new protobuf.Type("ClientWireRequestProto")
   .add(new protobuf.Field("target_message_id_short", 11, "string"))
   .add(new protobuf.Field("reply_to_message_id_short", 12, "string"))
   .add(new protobuf.Field("reply_to_sender", 13, "string"))
-  .add(new protobuf.Field("reply_to_text", 14, "string"));
+  .add(new protobuf.Field("reply_to_text", 14, "string"))
+  .add(new protobuf.Field("delete_for_everyone", 15, "bool"));
 
 const ClientDirectoryPeerProtoType = new protobuf.Type("ClientDirectoryPeerProto")
   .add(new protobuf.Field("username", 1, "string"))
@@ -198,6 +200,7 @@ export function encodeClientWireRequest(req: ClientWireRequest): Uint8Array {
     reply_to_message_id_short: req.reply_to_message_id_short ?? "",
     reply_to_sender: req.reply_to_sender ?? "",
     reply_to_text: req.reply_to_text ?? "",
+    delete_for_everyone: Boolean(req.delete_for_everyone),
   });
   return ClientWireRequestProtoType.encode(msg).finish();
 }

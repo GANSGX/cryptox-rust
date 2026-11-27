@@ -580,6 +580,7 @@ impl LivePrototypeState {
             password_vault_blob: Some(vault_blob.clone()),
             recovery_key: recovery_key.clone(),
             recovery_vault_blob: Some(recovery_vault_blob.clone()),
+            deleted_for_me_message_ids: Vec::new(),
         };
         self.persisted_accounts
             .insert(norm_uname.clone(), persisted_acc.clone());
@@ -1555,8 +1556,20 @@ fn handle_client_wire_proto_inner(
                 })
                 .map(|wm| wm.last_read_message_id);
 
+            let caller_deleted_ids: Vec<String> = state
+                .persisted_accounts
+                .get(&caller_norm)
+                .map(|acc| acc.deleted_for_me_message_ids.clone())
+                .unwrap_or_default();
+
             let mut messages = Vec::with_capacity(history_page.envelopes.len());
             for env in &history_page.envelopes {
+                let mid_hex = bytes_to_hex(&env.message_id);
+                let mid_short = mid_hex[..12.min(mid_hex.len())].to_string();
+                if caller_deleted_ids.iter().any(|d| d == &mid_short) {
+                    continue;
+                }
+
                 let parsed_payload = session_ref
                     .decrypt_historical_message(&caller.identity, &XChaCha20Poly1305Provider, env)
                     .map(|bytes| E2eeRichMessagePayloadProto::decode_or_plain_utf8(&bytes))
@@ -1586,14 +1599,13 @@ fn handle_client_wire_proto_inner(
                         .as_ref()
                         .is_some_and(|wm_bytes| wm_bytes.as_slice() >= env.message_id.as_slice());
 
-                let mid_hex = bytes_to_hex(&env.message_id);
                 let ct_hex = bytes_to_hex(&env.ciphertext);
                 let sig_hex = bytes_to_hex(&env.ed25519_signature);
 
                 messages.push(ClientDecryptedMessageItemProto {
                     sender_username: sender_uname,
                     ratchet_step: env.ratchet_step,
-                    message_id_short: mid_hex[..12.min(mid_hex.len())].to_string(),
+                    message_id_short: mid_short,
                     timestamp_ms: msg_ts_ms,
                     is_read_by_peer,
                     decrypted_text: parsed_payload.text,
@@ -1905,17 +1917,35 @@ fn handle_client_wire_proto_inner(
             let Ok(orig_msg_id) = MessageId::from_slice(&target_env.message_id) else {
                 return proto_err_resp("Некорректный MessageId");
             };
+            let mid_hex = bytes_to_hex(&target_env.message_id);
+            let mid_short = mid_hex[..12.min(mid_hex.len())].to_string();
 
-            let _ = state.gateway.messaging_service().delete_envelope(
-                &caller.active_token,
-                channel_id,
-                orig_msg_id,
-                now_ms,
-            );
-            if let Some(storage) = &state.disk_storage {
-                let _ = storage.delete_message_from_disk(state.tenant_id, channel_id, orig_msg_id);
+            if req.delete_for_everyone {
+                // Удаление у ОБОИХ собеседников (из RAM `messaging-svc` и с диска `redb`)
+                let _ = state.gateway.messaging_service().delete_envelope(
+                    &caller.active_token,
+                    channel_id,
+                    orig_msg_id,
+                    now_ms,
+                );
+                if let Some(storage) = &state.disk_storage {
+                    let _ =
+                        storage.delete_message_from_disk(state.tenant_id, channel_id, orig_msg_id);
+                }
+                state.broadcast_proto_ws_event("new_message", &caller_norm, &peer_norm, 0);
+            } else {
+                // Удаление ТОЛЬКО у себя (сохраняется в зашифрованном профиле пользователя в `redb`, у собеседника сообщение остаётся!)
+                let mut updated_acc_opt = None;
+                if let Some(mut acc) = state.persisted_accounts.get_mut(&caller_norm) {
+                    if !acc.deleted_for_me_message_ids.contains(&mid_short) {
+                        acc.deleted_for_me_message_ids.push(mid_short);
+                    }
+                    updated_acc_opt = Some(acc.clone());
+                }
+                if let (Some(storage), Some(acc)) = (&state.disk_storage, updated_acc_opt) {
+                    let _ = storage.put_user_account(&acc);
+                }
             }
-            state.broadcast_proto_ws_event("new_message", &caller_norm, &peer_norm, 0);
 
             ClientWireResponseProto {
                 ok: true,

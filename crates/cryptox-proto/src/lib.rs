@@ -847,6 +847,8 @@ pub struct ClientWireRequestProto {
     pub reply_to_sender: String,
     #[prost(string, tag = "14")]
     pub reply_to_text: String,
+    #[prost(bool, tag = "15")]
+    pub delete_for_everyone: bool,
 }
 
 #[derive(Clone, PartialEq, Eq, Message)]
@@ -980,6 +982,8 @@ pub struct PersistedUserAccountProto {
     pub recovery_key: String,
     #[prost(message, optional, tag = "10")]
     pub recovery_vault_blob: Option<EncryptedVaultBlob>,
+    #[prost(string, repeated, tag = "11")]
+    pub deleted_for_me_message_ids: Vec<String>,
 }
 
 #[cfg(test)]
