@@ -386,7 +386,12 @@ export const MessengerWorkspace: React.FC<MessengerWorkspaceProps> = ({
   );
 
   const scrollToBottom = useCallback((behavior: ScrollBehavior = "smooth") => {
-    messagesEndRef.current?.scrollIntoView({ behavior, block: "nearest" });
+    window.requestAnimationFrame(() => {
+      const el = messagesContainerRef.current;
+      if (el) {
+        el.scrollTo({ top: el.scrollHeight, behavior });
+      }
+    });
     isNearBottomRef.current = true;
     setShowScrollToBottom(false);
     setUnseenBelowCount(0);
@@ -403,6 +408,13 @@ export const MessengerWorkspace: React.FC<MessengerWorkspaceProps> = ({
       setUnseenBelowCount(0);
     }
   }, []);
+
+  // Если открылась плашка Ответа/Редактирования, поднимаем нижние сообщения над ней
+  useEffect(() => {
+    if ((replyingToMessage || editingMessage) && isNearBottomRef.current) {
+      scrollToBottom("smooth");
+    }
+  }, [replyingToMessage, editingMessage, scrollToBottom]);
 
   useEffect(() => {
     void loadDirectoryPeers(searchQuery);
@@ -1170,7 +1182,7 @@ export const MessengerWorkspace: React.FC<MessengerWorkspaceProps> = ({
               ref={messagesContainerRef}
               onScroll={handleMessagesScroll}
               className={cn(
-                "relative z-10 h-full w-full px-8 pt-20 pb-24",
+                "relative z-10 h-full w-full px-8 pt-20",
                 messages.length === 0 ? "overflow-hidden" : "overflow-y-auto"
               )}
             >
@@ -1331,7 +1343,13 @@ export const MessengerWorkspace: React.FC<MessengerWorkspaceProps> = ({
                   </React.Fragment>
                 );
               })}
-              <div ref={messagesEndRef} />
+              <div
+                ref={messagesEndRef}
+                className={cn(
+                  "w-full shrink-0",
+                  replyingToMessage || editingMessage ? "h-36" : "h-24"
+                )}
+              />
             </div>
 
             {/* Плавающая кнопка быстрого скролла вниз «↓» (появляется при прокрутке истории вверх) */}
