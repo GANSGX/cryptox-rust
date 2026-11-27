@@ -976,8 +976,7 @@ export const MessengerWorkspace: React.FC<MessengerWorkspaceProps> = ({
                       className={cn(
                         "flex flex-col",
                         isMine ? "items-end" : "items-start",
-                        isFirstInGroup ? "mt-2.5" : "mt-[3px]",
-                        isLastInGroup && "mb-1"
+                        isFirstInGroup ? "mt-2.5" : "mt-[3px]"
                       )}
                     >
                       <div
@@ -991,35 +990,35 @@ export const MessengerWorkspace: React.FC<MessengerWorkspaceProps> = ({
                               : "border border-zinc-200/90 bg-white/95 text-zinc-900"
                         )}
                       >
-                        {/* Хвостик-капелька, направленный по диагонали ВНИЗ и ВПРАВО (↘) у последнего баббла в группе */}
+                        {/* Аккуратная короткая микро-капелька (~2px) по диагонали вниз и вправо (↘) */}
                         {isLastInGroup && isMine && (
                           <svg
-                            viewBox="0 0 18 18"
-                            width="18"
-                            height="18"
+                            viewBox="0 0 12 12"
+                            width="12"
+                            height="12"
                             aria-hidden="true"
-                            className="pointer-events-none absolute -right-[4px] -bottom-[5px] text-[#2b5278]"
+                            className="pointer-events-none absolute -right-[2px] -bottom-[2px] text-[#2b5278]"
                           >
                             <path
-                              d="M 2 13 L 14 2 C 14 7.8 14.9 11.8 16.9 15.1 C 17.6 16.2 16.5 17.4 15.2 16.8 C 11.6 15.2 7.4 13.2 2 13 Z"
+                              d="M 2 9.5 L 10 2 C 10 5.6 10.5 8.1 11.4 9.9 C 11.8 10.7 11.0 11.5 10.1 11.2 C 7.9 10.4 5.2 9.5 2 9.5 Z"
                               fill="currentColor"
                             />
                           </svg>
                         )}
                         {isLastInGroup && !isMine && (
                           <svg
-                            viewBox="0 0 18 18"
-                            width="18"
-                            height="18"
+                            viewBox="0 0 12 12"
+                            width="12"
+                            height="12"
                             aria-hidden="true"
                             style={{ transform: "scaleX(-1)" }}
                             className={cn(
-                              "pointer-events-none absolute -bottom-[5px] -left-[4px]",
+                              "pointer-events-none absolute -bottom-[2px] -left-[2px]",
                               isDark ? "text-[#181820]" : "text-white"
                             )}
                           >
                             <path
-                              d="M 2 13 L 14 2 C 14 7.8 14.9 11.8 16.9 15.1 C 17.6 16.2 16.5 17.4 15.2 16.8 C 11.6 15.2 7.4 13.2 2 13 Z"
+                              d="M 2 9.5 L 10 2 C 10 5.6 10.5 8.1 11.4 9.9 C 11.8 10.7 11.0 11.5 10.1 11.2 C 7.9 10.4 5.2 9.5 2 9.5 Z"
                               fill="currentColor"
                             />
                           </svg>
