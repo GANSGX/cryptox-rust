@@ -3,6 +3,7 @@ import { AnimatePresence, motion } from "framer-motion";
 import {
   Check,
   CheckCheck,
+  ChevronDown,
   Search,
   X,
 } from "lucide-react";
@@ -51,6 +52,65 @@ function avatarGradientFor(username: string): string {
     hash = Math.trunc(hash * 31 + (username.codePointAt(i) ?? 0)) % 1000003;
   }
   return AVATAR_GRADIENTS[Math.abs(hash) % AVATAR_GRADIENTS.length];
+}
+
+const GROUP_WINDOW_MS = 5 * 60 * 1000;
+
+function isSameCalendarDay(tsA: number, tsB: number): boolean {
+  if (!tsA || !tsB) return false;
+  const a = new Date(tsA);
+  const b = new Date(tsB);
+  return (
+    a.getFullYear() === b.getFullYear() &&
+    a.getMonth() === b.getMonth() &&
+    a.getDate() === b.getDate()
+  );
+}
+
+function formatDateSeparatorLabel(tsMs: number): string {
+  if (!tsMs) return "Сегодня";
+  const target = new Date(tsMs);
+  const now = new Date();
+  if (isSameCalendarDay(tsMs, now.getTime())) {
+    return "Сегодня";
+  }
+  const yesterday = new Date(now);
+  yesterday.setDate(now.getDate() - 1);
+  if (isSameCalendarDay(tsMs, yesterday.getTime())) {
+    return "Вчера";
+  }
+  const sameYear = target.getFullYear() === now.getFullYear();
+  return target.toLocaleDateString(
+    "ru-RU",
+    sameYear
+      ? { day: "numeric", month: "long" }
+      : { day: "numeric", month: "long", year: "numeric" }
+  );
+}
+
+function isGroupedWithAdjacent(
+  a: ClientDecryptedMessageItem | undefined,
+  b: ClientDecryptedMessageItem | undefined
+): boolean {
+  if (!a || !b) return false;
+  if (a.sender_username !== b.sender_username) return false;
+  if (!isSameCalendarDay(a.timestamp_ms, b.timestamp_ms)) return false;
+  return Math.abs(b.timestamp_ms - a.timestamp_ms) <= GROUP_WINDOW_MS;
+}
+
+function getBubbleShapeClasses(
+  isMine: boolean,
+  isFirstInGroup: boolean,
+  isLastInGroup: boolean
+): string {
+  if (isMine) {
+    const topRight = isFirstInGroup ? "rounded-tr-[18px]" : "rounded-tr-[5px]";
+    const bottomRight = isLastInGroup ? "rounded-br-[3px]" : "rounded-br-[5px]";
+    return `rounded-l-[18px] ${topRight} ${bottomRight}`;
+  }
+  const topLeft = isFirstInGroup ? "rounded-tl-[18px]" : "rounded-tl-[5px]";
+  const bottomLeft = isLastInGroup ? "rounded-bl-[3px]" : "rounded-bl-[5px]";
+  return `rounded-r-[18px] ${topLeft} ${bottomLeft}`;
 }
 
 /**
@@ -159,11 +219,16 @@ export const MessengerWorkspace: React.FC<MessengerWorkspaceProps> = ({
   // Индикатор набора текста и непрочитанных сообщений (бинарный WebSocket)
   const [peerTyping, setPeerTyping] = useState<Record<string, number>>({});
   const [unreadByPeer, setUnreadByPeer] = useState<Record<string, number>>({});
+  const [showScrollToBottom, setShowScrollToBottom] = useState<boolean>(false);
+  const [unseenBelowCount, setUnseenBelowCount] = useState<number>(0);
 
   const wsRef = useRef<WebSocket | null>(null);
   const selectedPeerRef = useRef<string>("");
   const activeUserRef = useRef<string>(activeUsername);
+  const messagesContainerRef = useRef<HTMLDivElement | null>(null);
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
+  const isNearBottomRef = useRef<boolean>(true);
+  const prevMessagesLenRef = useRef<number>(0);
   const lastTypingSentRef = useRef<number>(0);
 
   selectedPeerRef.current = selectedPeer;
@@ -286,22 +351,55 @@ export const MessengerWorkspace: React.FC<MessengerWorkspaceProps> = ({
     []
   );
 
+  const scrollToBottom = useCallback((behavior: ScrollBehavior = "smooth") => {
+    messagesEndRef.current?.scrollIntoView({ behavior, block: "nearest" });
+    isNearBottomRef.current = true;
+    setShowScrollToBottom(false);
+    setUnseenBelowCount(0);
+  }, []);
+
+  const handleMessagesScroll = useCallback(() => {
+    const el = messagesContainerRef.current;
+    if (!el) return;
+    const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
+    const nearBottom = distanceFromBottom <= 130;
+    isNearBottomRef.current = nearBottom;
+    setShowScrollToBottom(!nearBottom);
+    if (nearBottom) {
+      setUnseenBelowCount(0);
+    }
+  }, []);
+
   useEffect(() => {
     void loadDirectoryPeers(searchQuery);
   }, [activeUsername, loadDirectoryPeers, searchQuery]);
 
   useEffect(() => {
     if (selectedPeer) {
+      isNearBottomRef.current = true;
+      prevMessagesLenRef.current = 0;
+      setShowScrollToBottom(false);
+      setUnseenBelowCount(0);
       void loadChatHistory(selectedPeer);
     }
   }, [selectedPeer, activeUsername, loadChatHistory]);
 
-  // Автопрокрутка ТОЛЬКО когда в чате реально есть сообщения (не вызывает скролл на пустом чате)
+  // Умная автопрокрутка: скроллит вниз при открытии чата, отправке своего сообщения или если юзер уже внизу ленты
   useEffect(() => {
-    if (messages.length > 0) {
-      messagesEndRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    const prevLen = prevMessagesLenRef.current;
+    const currLen = messages.length;
+    prevMessagesLenRef.current = currLen;
+
+    if (currLen === 0) return;
+    const lastMsg = messages[currLen - 1];
+    const sentByMe = lastMsg?.sender_username === activeUsername;
+
+    if (prevLen === 0 || sentByMe || isNearBottomRef.current) {
+      scrollToBottom(prevLen === 0 ? "auto" : "smooth");
+    } else if (currLen > prevLen) {
+      setUnseenBelowCount((prev) => prev + (currLen - prevLen));
     }
-  }, [messages.length, selectedPeer]);
+  }, [messages, activeUsername, selectedPeer, scrollToBottom]);
 
   // Подключение бинарного WebSocket (`/ws`, `binaryType = "arraybuffer"`)
   useEffect(() => {
@@ -829,67 +927,165 @@ export const MessengerWorkspace: React.FC<MessengerWorkspaceProps> = ({
 
             {/* Полновысотная область сообщений от самого верха до самого низа экрана (скроллбар во всю высоту окна!) */}
             <div
+              ref={messagesContainerRef}
+              onScroll={handleMessagesScroll}
               className={cn(
-                "relative z-10 h-full w-full px-8 pt-20 pb-24 space-y-2",
+                "relative z-10 h-full w-full px-8 pt-20 pb-24",
                 messages.length === 0 ? "overflow-hidden" : "overflow-y-auto"
               )}
             >
-              {messages.map((m) => {
+              {messages.map((m, idx) => {
                 const isMine = m.sender_username === activeUsername;
+                const prevMsg = idx > 0 ? messages[idx - 1] : undefined;
+                const nextMsg =
+                  idx + 1 < messages.length ? messages[idx + 1] : undefined;
+
+                const showDateSeparator =
+                  !prevMsg ||
+                  !isSameCalendarDay(prevMsg.timestamp_ms, m.timestamp_ms);
+                const isFirstInGroup =
+                  showDateSeparator || !isGroupedWithAdjacent(prevMsg, m);
+                const isLastInGroup = !isGroupedWithAdjacent(m, nextMsg);
+                const bubbleShape = getBubbleShapeClasses(
+                  isMine,
+                  isFirstInGroup,
+                  isLastInGroup
+                );
 
                 return (
-                  <motion.div
-                    key={`${m.message_id_short}-${m.ratchet_step}`}
-                    initial={{ opacity: 0, y: 8, scale: 0.98 }}
-                    animate={{ opacity: 1, y: 0, scale: 1 }}
-                    transition={{ duration: 0.16, ease: [0.22, 1, 0.36, 1] }}
-                    className={cn(
-                      "flex flex-col",
-                      isMine ? "items-end" : "items-start"
+                  <React.Fragment key={`${m.message_id_short}-${m.ratchet_step}`}>
+                    {showDateSeparator && (
+                      <div className="my-3 flex items-center justify-center select-none">
+                        <span
+                          className={cn(
+                            "rounded-full border px-3.5 py-0.5 text-[11.5px] font-medium shadow-sm backdrop-blur-md",
+                            isDark
+                              ? "border-zinc-800/80 bg-[#17171f]/80 text-zinc-300"
+                              : "border-zinc-200/80 bg-white/85 text-zinc-600"
+                          )}
+                        >
+                          {formatDateSeparatorLabel(m.timestamp_ms)}
+                        </span>
+                      </div>
                     )}
-                  >
-                    <div
+
+                    <motion.div
+                      initial={{ opacity: 0, y: 6, scale: 0.985 }}
+                      animate={{ opacity: 1, y: 0, scale: 1 }}
+                      transition={{ duration: 0.15, ease: [0.22, 1, 0.36, 1] }}
                       className={cn(
-                        "max-w-lg rounded-2xl px-4 py-2 shadow-md backdrop-blur-md",
-                        isMine
-                          ? "bg-[#2b5278] text-white rounded-br-sm"
-                          : isDark
-                            ? "border border-zinc-800/80 bg-[#181820]/95 text-zinc-100 rounded-bl-sm"
-                            : "border border-zinc-200/90 bg-white/95 text-zinc-900 rounded-bl-sm"
+                        "flex flex-col",
+                        isMine ? "items-end" : "items-start",
+                        isFirstInGroup ? "mt-2.5" : "mt-[3px]"
                       )}
                     >
-                      <p className="text-[13.5px] leading-relaxed whitespace-pre-wrap break-words">
-                        {m.decrypted_text}
-                      </p>
-
                       <div
                         className={cn(
-                          "mt-1 flex items-center justify-end gap-1 text-[10px]",
-                          isMine ? "text-sky-100/75" : "text-zinc-400"
+                          "relative max-w-lg px-3.5 py-1.5 shadow-md backdrop-blur-md",
+                          bubbleShape,
+                          isMine
+                            ? "bg-[#2b5278] text-white"
+                            : isDark
+                              ? "border border-zinc-800/80 bg-[#181820]/95 text-zinc-100"
+                              : "border border-zinc-200/90 bg-white/95 text-zinc-900"
                         )}
                       >
-                        <span>{formatShortTime(m.timestamp_ms)}</span>
+                        {/* Анатомический хвостик только у последнего сообщения в группе (как в Telegram Web) */}
+                        {isLastInGroup && isMine && (
+                          <svg
+                            viewBox="0 0 11 20"
+                            width="11"
+                            height="20"
+                            aria-hidden="true"
+                            className="pointer-events-none absolute -right-[7px] bottom-0 text-[#2b5278]"
+                          >
+                            <path
+                              d="M0 0v14c0 3.3 2.7 6 6 6h4.2c.6 0 .9-.7.5-1.1C7.6 16.2 3 11.4 0 0z"
+                              fill="currentColor"
+                            />
+                          </svg>
+                        )}
+                        {isLastInGroup && !isMine && (
+                          <svg
+                            viewBox="0 0 11 20"
+                            width="11"
+                            height="20"
+                            aria-hidden="true"
+                            className={cn(
+                              "pointer-events-none absolute -left-[7px] bottom-0",
+                              isDark ? "text-[#181820]" : "text-white"
+                            )}
+                          >
+                            <path
+                              d="M11 0v14c0 3.3-2.7 6-6 6H.8c-.6 0-.9-.7-.5-1.1C3.4 16.2 8 11.4 11 0z"
+                              fill="currentColor"
+                            />
+                          </svg>
+                        )}
 
-                        {isMine &&
-                          (m.is_read_by_peer ? (
-                            <span
-                              title="Прочитано"
-                              className="inline-flex"
-                            >
-                              <CheckCheck className="h-3.5 w-3.5 text-sky-300" />
-                            </span>
-                          ) : (
-                            <span title="Отправлено" className="inline-flex">
-                              <Check className="h-3.5 w-3.5 opacity-75" />
-                            </span>
-                          ))}
+                        <div className="text-[13.5px] leading-[1.38] whitespace-pre-wrap break-words">
+                          <span>{m.decrypted_text}</span>
+                          <span
+                            className={cn(
+                              "float-right ml-2.5 mt-1.5 inline-flex translate-y-[2px] select-none items-center gap-1 text-[10px] leading-none",
+                              isMine ? "text-sky-100/75" : "text-zinc-400"
+                            )}
+                          >
+                            <span>{formatShortTime(m.timestamp_ms)}</span>
+
+                            {isMine &&
+                              (m.is_read_by_peer ? (
+                                <span title="Прочитано" className="inline-flex">
+                                  <CheckCheck className="h-3.5 w-3.5 text-sky-300" />
+                                </span>
+                              ) : (
+                                <span title="Отправлено" className="inline-flex">
+                                  <Check className="h-3.5 w-3.5 opacity-75" />
+                                </span>
+                              ))}
+                          </span>
+                        </div>
                       </div>
-                    </div>
-                  </motion.div>
+                    </motion.div>
+                  </React.Fragment>
                 );
               })}
               <div ref={messagesEndRef} />
             </div>
+
+            {/* Плавающая кнопка быстрого скролла вниз «↓» (появляется при прокрутке истории вверх) */}
+            <AnimatePresence>
+              {showScrollToBottom && messages.length > 0 && (
+                <motion.button
+                  key="scroll-to-bottom-btn"
+                  type="button"
+                  onClick={() => scrollToBottom("smooth")}
+                  aria-label="Прокрутить вниз"
+                  initial={{ opacity: 0, scale: 0.7, y: 12 }}
+                  animate={{ opacity: 1, scale: 1, y: 0 }}
+                  exit={{ opacity: 0, scale: 0.7, y: 12 }}
+                  transition={{
+                    type: "spring",
+                    stiffness: 420,
+                    damping: 26,
+                  }}
+                  whileTap={{ scale: 0.92 }}
+                  className={cn(
+                    "absolute right-7 bottom-20 z-20 flex h-10 w-10 items-center justify-center rounded-full border shadow-xl backdrop-blur-xl transition-colors cursor-pointer",
+                    isDark
+                      ? "border-zinc-800/90 bg-[#17171f]/90 text-zinc-200 hover:bg-zinc-800/90"
+                      : "border-zinc-200/90 bg-white/95 text-zinc-700 hover:bg-zinc-100"
+                  )}
+                >
+                  <ChevronDown className="h-5 w-5" />
+                  {unseenBelowCount > 0 && (
+                    <span className="absolute -top-1.5 -right-1 flex h-5 min-w-5 items-center justify-center rounded-full bg-sky-500 px-1.5 text-[10px] font-bold text-white shadow-sm">
+                      {unseenBelowCount}
+                    </span>
+                  )}
+                </motion.button>
+              )}
+            </AnimatePresence>
 
             {/* Плавающая нижняя капсула ввода поверх полновысотной ленты сообщений */}
             <footer className="pointer-events-none absolute inset-x-0 bottom-5 z-20 px-8">
