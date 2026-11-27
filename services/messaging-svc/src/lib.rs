@@ -182,6 +182,60 @@ impl MessagingService {
         })
     }
 
+    /// Заменяет конверт сообщения на месте в RAM-журнале канала (при редактировании автором)
+    /// со строгой проверкой Zero-Trust владения (`sender_user_id == claims.user_id`).
+    pub fn update_envelope_in_place(
+        &self,
+        token: &SignedSessionToken,
+        updated_envelope: EncryptedEnvelope,
+        now_ms: u64,
+    ) -> Result<(), MessagingError> {
+        let claims = self.verifier.verify_token(token, now_ms)?;
+        updated_envelope.validate_structure()?;
+
+        let env_tenant = TenantId::from_slice(&updated_envelope.tenant_id)?;
+        let env_channel = ChannelId::from_slice(&updated_envelope.channel_id)?;
+        let env_msg_id = MessageId::from_slice(&updated_envelope.message_id)?;
+        let env_sender = UserId::from_slice(&updated_envelope.sender_user_id)?;
+
+        if !env_tenant.ct_eq_id(&claims.tenant_id) || !env_sender.ct_eq_id(&claims.user_id) {
+            return Err(MessagingError::SenderOrTenantSpoofing);
+        }
+
+        let partition = self.get_or_create_channel(env_tenant, env_channel);
+        let arc_env = Arc::new(updated_envelope);
+        {
+            let mut timeline = partition
+                .timeline
+                .write()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            timeline.insert(env_msg_id, arc_env);
+        }
+        Ok(())
+    }
+
+    /// Удаляет сообщение из RAM-журнала канала и индекса дедупликации.
+    pub fn delete_envelope(
+        &self,
+        token: &SignedSessionToken,
+        channel_id: ChannelId,
+        message_id: MessageId,
+        now_ms: u64,
+    ) -> Result<bool, MessagingError> {
+        let claims = self.verifier.verify_token(token, now_ms)?;
+        self.dedup_index
+            .remove(&(claims.tenant_id, channel_id, message_id));
+
+        let Some(partition) = self.channels.get(&(claims.tenant_id, channel_id)) else {
+            return Ok(false);
+        };
+        let mut timeline = partition
+            .timeline
+            .write()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        Ok(timeline.remove(&message_id).is_some())
+    }
+
     /// Курсорная выдача зашифрованной облачной истории чата по `UUIDv7` (`before_cursor`)
     /// за O(log N + limit) **без `OFFSET` и без `SELECT COUNT(*)`**.
     ///

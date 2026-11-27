@@ -24,9 +24,9 @@ use cryptox_core::{
 use cryptox_proto::{
     ChannelId, CipherSuiteId, ClientDecryptedMessageItemProto, ClientDirectoryPeerProto,
     ClientWireOp, ClientWireRequestProto, ClientWireResponseProto, ClientWireWsEventProto,
-    DeviceId, DirectoryEntryProto, EncryptedVaultBlob, EncryptionPolicy, MessageId,
-    PersistedUserAccountProto, PublicKeyBundle, ReadReceiptWatermarkProto, RegisterUserRequest,
-    SignedSessionToken, TenantId, UserId,
+    DeviceId, DirectoryEntryProto, E2eeRichMessagePayloadProto, EncryptedVaultBlob,
+    EncryptionPolicy, MessageId, PersistedUserAccountProto, PublicKeyBundle,
+    ReadReceiptWatermarkProto, RegisterUserRequest, SignedSessionToken, TenantId, UserId,
 };
 use cryptox_storage::EncryptedStorageEngine;
 use dashmap::DashMap;
@@ -1428,10 +1428,18 @@ fn handle_client_wire_proto_inner(
                     .unwrap_or(0);
                 session_ref.ensure_outbound_step_above(max_step);
             }
+            let rich_payload = E2eeRichMessagePayloadProto {
+                text: req.plaintext_message.clone(),
+                reply_to_message_id_short: req.reply_to_message_id_short.clone(),
+                reply_to_sender: req.reply_to_sender.clone(),
+                reply_to_text: req.reply_to_text.clone(),
+                is_edited: false,
+            };
+            let encoded_inner = rich_payload.encode_prefixed();
             let Ok(envelope) = session_ref.encrypt_message(
                 &sender.identity,
                 &XChaCha20Poly1305Provider,
-                req.plaintext_message.as_bytes(),
+                &encoded_inner,
             ) else {
                 return proto_err_resp("Ошибка шифрования XChaCha20-Poly1305");
             };
@@ -1549,10 +1557,16 @@ fn handle_client_wire_proto_inner(
 
             let mut messages = Vec::with_capacity(history_page.envelopes.len());
             for env in &history_page.envelopes {
-                let decrypted_text = session_ref
+                let parsed_payload = session_ref
                     .decrypt_historical_message(&caller.identity, &XChaCha20Poly1305Provider, env)
-                    .map(|bytes| String::from_utf8_lossy(&bytes).to_string())
-                    .unwrap_or_else(|e| format!("[Ошибка дешифрования: {e}]"));
+                    .map(|bytes| E2eeRichMessagePayloadProto::decode_or_plain_utf8(&bytes))
+                    .unwrap_or_else(|e| E2eeRichMessagePayloadProto {
+                        text: format!("[Ошибка дешифрования: {e}]"),
+                        reply_to_message_id_short: String::new(),
+                        reply_to_sender: String::new(),
+                        reply_to_text: String::new(),
+                        is_edited: false,
+                    });
 
                 let sender_uid =
                     UserId::from_slice(&env.sender_user_id).unwrap_or_else(|_| UserId::new_v7());
@@ -1582,11 +1596,15 @@ fn handle_client_wire_proto_inner(
                     message_id_short: mid_hex[..12.min(mid_hex.len())].to_string(),
                     timestamp_ms: msg_ts_ms,
                     is_read_by_peer,
-                    decrypted_text,
+                    decrypted_text: parsed_payload.text,
                     wire_bytes_len: env.to_wire_bytes().len() as u32,
                     nonce_hex: bytes_to_hex(&env.nonce),
                     ciphertext_hex: ct_hex,
                     signature_hex_short: sig_hex[..24.min(sig_hex.len())].to_string(),
+                    reply_to_message_id_short: parsed_payload.reply_to_message_id_short,
+                    reply_to_sender: parsed_payload.reply_to_sender,
+                    reply_to_text: parsed_payload.reply_to_text,
+                    is_edited: parsed_payload.is_edited,
                 });
             }
 
@@ -1751,6 +1769,156 @@ fn handle_client_wire_proto_inner(
             ClientWireResponseProto {
                 ok: true,
                 username: norm,
+                ..ClientWireResponseProto::default()
+            }
+        }
+        Some(ClientWireOp::EditChatMessage) => {
+            let caller_norm = state.resolve_identifier(&req.caller_username);
+            let peer_norm = state.resolve_identifier(&req.peer_username);
+            let target_short = req.target_message_id_short.trim();
+            let new_text = req.plaintext_message.trim();
+            if target_short.is_empty() || new_text.is_empty() {
+                return proto_err_resp("Укажите идентификатор сообщения и новый текст");
+            }
+
+            let Some(caller) = state.client_enclaves.get(&caller_norm).map(|r| Arc::clone(&*r))
+            else {
+                return proto_err_resp("Отправитель не найден");
+            };
+            let Some(session_ref) = caller.sessions.get(&peer_norm) else {
+                return proto_err_resp("Сессия чата не найдена");
+            };
+            let channel_id = session_ref.channel_id();
+
+            let Ok(history_page) = state.fetch_merged_channel_history(
+                &caller.active_token,
+                channel_id,
+                None,
+                100,
+                now_ms,
+            ) else {
+                return proto_err_resp("Ошибка чтения истории чата");
+            };
+
+            let Some(target_env) = history_page
+                .envelopes
+                .iter()
+                .find(|env| bytes_to_hex(&env.message_id).starts_with(target_short))
+            else {
+                return proto_err_resp("Сообщение для редактирования не найдено");
+            };
+
+            let Ok(sender_uid) = UserId::from_slice(&target_env.sender_user_id) else {
+                return proto_err_resp("Некорректный автор сообщения");
+            };
+            if sender_uid != caller.identity.user_id() {
+                return proto_err_resp("Редактировать можно только собственные сообщения");
+            }
+            let Ok(orig_msg_id) = MessageId::from_slice(&target_env.message_id) else {
+                return proto_err_resp("Некорректный MessageId");
+            };
+
+            // Сохраняем цитату Reply при редактировании текста сообщения
+            let prev_payload = session_ref
+                .decrypt_historical_message(
+                    &caller.identity,
+                    &XChaCha20Poly1305Provider,
+                    target_env,
+                )
+                .map(|bytes| E2eeRichMessagePayloadProto::decode_or_plain_utf8(&bytes))
+                .unwrap_or_default();
+
+            let updated_payload = E2eeRichMessagePayloadProto {
+                text: new_text.to_string(),
+                reply_to_message_id_short: prev_payload.reply_to_message_id_short,
+                reply_to_sender: prev_payload.reply_to_sender,
+                reply_to_text: prev_payload.reply_to_text,
+                is_edited: true,
+            };
+
+            let Ok(updated_env) = session_ref.encrypt_edited_message(
+                &caller.identity,
+                &XChaCha20Poly1305Provider,
+                orig_msg_id,
+                target_env.ratchet_step,
+                &updated_payload.encode_prefixed(),
+            ) else {
+                return proto_err_resp("Ошибка перешифрования сообщения");
+            };
+            drop(session_ref);
+
+            let wire_len = updated_env.to_wire_bytes().len() as u32;
+            if let Err(e) = state.gateway.messaging_service().update_envelope_in_place(
+                &caller.active_token,
+                updated_env.clone(),
+                now_ms,
+            ) {
+                return proto_err_resp(e.to_string());
+            }
+            if let Some(storage) = &state.disk_storage {
+                let _ = storage.commit_messages_batch(std::slice::from_ref(&updated_env));
+            }
+            state.broadcast_proto_ws_event("new_message", &caller_norm, &peer_norm, wire_len);
+
+            ClientWireResponseProto {
+                ok: true,
+                wire_bytes_len: wire_len,
+                ratchet_step: updated_env.ratchet_step,
+                ..ClientWireResponseProto::default()
+            }
+        }
+        Some(ClientWireOp::DeleteChatMessage) => {
+            let caller_norm = state.resolve_identifier(&req.caller_username);
+            let peer_norm = state.resolve_identifier(&req.peer_username);
+            let target_short = req.target_message_id_short.trim();
+            if target_short.is_empty() {
+                return proto_err_resp("Укажите идентификатор сообщения для удаления");
+            }
+
+            let Some(caller) = state.client_enclaves.get(&caller_norm).map(|r| Arc::clone(&*r))
+            else {
+                return proto_err_resp("Пользователь не найден");
+            };
+            let Some(session_ref) = caller.sessions.get(&peer_norm) else {
+                return proto_err_resp("Сессия чата не найдена");
+            };
+            let channel_id = session_ref.channel_id();
+            drop(session_ref);
+
+            let Ok(history_page) = state.fetch_merged_channel_history(
+                &caller.active_token,
+                channel_id,
+                None,
+                100,
+                now_ms,
+            ) else {
+                return proto_err_resp("Ошибка чтения истории чата");
+            };
+
+            let Some(target_env) = history_page
+                .envelopes
+                .iter()
+                .find(|env| bytes_to_hex(&env.message_id).starts_with(target_short))
+            else {
+                return proto_err_resp("Сообщение для удаления не найдено");
+            };
+            let Ok(orig_msg_id) = MessageId::from_slice(&target_env.message_id) else {
+                return proto_err_resp("Некорректный MessageId");
+            };
+
+            let _ = state.gateway.messaging_service().delete_envelope(
+                &caller.active_token,
+                channel_id,
+                orig_msg_id,
+                now_ms,
+            );
+            if let Some(storage) = &state.disk_storage {
+                let _ = storage.delete_message_from_disk(state.tenant_id, channel_id, orig_msg_id);
+            }
+            state.broadcast_proto_ws_event("new_message", &caller_norm, &peer_norm, 0);
+
+            ClientWireResponseProto {
+                ok: true,
                 ..ClientWireResponseProto::default()
             }
         }

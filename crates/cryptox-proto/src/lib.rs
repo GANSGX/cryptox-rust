@@ -739,6 +739,8 @@ pub enum ClientWireOp {
     MarkChatRead = 9,
     CloudSyncNewDevice = 10,
     CheckUsername = 11,
+    EditChatMessage = 12,
+    DeleteChatMessage = 13,
 }
 
 impl ClientWireOp {
@@ -756,7 +758,61 @@ impl ClientWireOp {
             9 => Some(Self::MarkChatRead),
             10 => Some(Self::CloudSyncNewDevice),
             11 => Some(Self::CheckUsername),
+            12 => Some(Self::EditChatMessage),
+            13 => Some(Self::DeleteChatMessage),
             _ => None,
+        }
+    }
+}
+
+/// Внутренняя E2EE-полезная нагрузка сообщения (текст + цитата Reply + флаг редактирования),
+/// шифруемая ВНУТРИ `EncryptedEnvelope.ciphertext` (`XChaCha20-Poly1305`) с магическим префиксом `CXR1`.
+#[derive(Clone, PartialEq, Eq, Message)]
+pub struct E2eeRichMessagePayloadProto {
+    #[prost(string, tag = "1")]
+    pub text: String,
+    #[prost(string, tag = "2")]
+    pub reply_to_message_id_short: String,
+    #[prost(string, tag = "3")]
+    pub reply_to_sender: String,
+    #[prost(string, tag = "4")]
+    pub reply_to_text: String,
+    #[prost(bool, tag = "5")]
+    pub is_edited: bool,
+}
+
+impl E2eeRichMessagePayloadProto {
+    pub const MAGIC_PREFIX: &'static [u8; 4] = b"CXR1";
+
+    #[must_use]
+    pub fn encode_prefixed(&self) -> Vec<u8> {
+        if self.reply_to_message_id_short.is_empty()
+            && self.reply_to_sender.is_empty()
+            && self.reply_to_text.is_empty()
+            && !self.is_edited
+        {
+            return self.text.as_bytes().to_vec();
+        }
+        let body = self.encode_to_vec();
+        let mut out = Vec::with_capacity(4 + body.len());
+        out.extend_from_slice(Self::MAGIC_PREFIX);
+        out.extend_from_slice(&body);
+        out
+    }
+
+    #[must_use]
+    pub fn decode_or_plain_utf8(raw_decrypted: &[u8]) -> Self {
+        if raw_decrypted.starts_with(Self::MAGIC_PREFIX)
+            && let Ok(parsed) = Self::decode(&raw_decrypted[4..])
+        {
+            return parsed;
+        }
+        Self {
+            text: String::from_utf8_lossy(raw_decrypted).to_string(),
+            reply_to_message_id_short: String::new(),
+            reply_to_sender: String::new(),
+            reply_to_text: String::new(),
+            is_edited: false,
         }
     }
 }
@@ -783,6 +839,14 @@ pub struct ClientWireRequestProto {
     pub search_query: String,
     #[prost(string, tag = "10")]
     pub plaintext_message: String,
+    #[prost(string, tag = "11")]
+    pub target_message_id_short: String,
+    #[prost(string, tag = "12")]
+    pub reply_to_message_id_short: String,
+    #[prost(string, tag = "13")]
+    pub reply_to_sender: String,
+    #[prost(string, tag = "14")]
+    pub reply_to_text: String,
 }
 
 #[derive(Clone, PartialEq, Eq, Message)]
@@ -831,6 +895,14 @@ pub struct ClientDecryptedMessageItemProto {
     pub ciphertext_hex: String,
     #[prost(string, tag = "10")]
     pub signature_hex_short: String,
+    #[prost(string, tag = "11")]
+    pub reply_to_message_id_short: String,
+    #[prost(string, tag = "12")]
+    pub reply_to_sender: String,
+    #[prost(string, tag = "13")]
+    pub reply_to_text: String,
+    #[prost(bool, tag = "14")]
+    pub is_edited: bool,
 }
 
 #[derive(Clone, PartialEq, Eq, Message)]

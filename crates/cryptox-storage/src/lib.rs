@@ -544,6 +544,34 @@ impl EncryptedStorageEngine {
         Ok(())
     }
 
+    /// Физически удаляет сообщение из 48-байтного B+Tree индекса `messages_timeline_v1` на диске `redb`.
+    pub fn delete_message_from_disk(
+        &self,
+        tenant_id: TenantId,
+        channel_id: ChannelId,
+        message_id: MessageId,
+    ) -> Result<bool, StorageError> {
+        let key_48 = Self::compute_composite_timeline_key(tenant_id, channel_id, message_id);
+        let write_txn = self
+            .db
+            .begin_write()
+            .map_err(|e| StorageError::Redb(e.to_string()))?;
+        let removed = {
+            let mut table = write_txn
+                .open_table(MESSAGES_TIMELINE_TABLE)
+                .map_err(|e| StorageError::Redb(e.to_string()))?;
+            let prev = table
+                .remove(key_48)
+                .map_err(|e| StorageError::Redb(e.to_string()))?;
+            prev.is_some()
+        };
+        write_txn
+            .commit()
+            .map_err(|e| StorageError::Redb(e.to_string()))?;
+        self.group_commits.fetch_add(1, Ordering::Relaxed);
+        Ok(removed)
+    }
+
     /// Курсорная выборка страницы истории чата напрямую из 48-байтного дискового B+Tree индекса
     /// (`[16B TenantId || 16B ChannelId || 16B MessageId (UUIDv7)]`) за O(log N + limit) **без `OFFSET` и `COUNT(*)`**.
     pub fn fetch_channel_history_from_disk(

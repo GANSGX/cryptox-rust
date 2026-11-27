@@ -228,6 +228,64 @@ impl ChatSession {
         Ok(envelope)
     }
 
+    /// Перешифровывает отредактированное сообщение автора с новым случайным 192-битным `nonce`
+    /// и новой подписью `Ed25519`, сохраняя исходные `MessageId (UUIDv7)` и `ratchet_step`,
+    /// чтобы сообщение осталось на своём месте в B+Tree индексе истории чата.
+    pub fn encrypt_edited_message(
+        &self,
+        my_identity: &UserIdentity,
+        provider: &dyn CryptoProvider,
+        original_message_id: MessageId,
+        original_ratchet_step: u64,
+        new_plaintext: &[u8],
+    ) -> Result<EncryptedEnvelope, CryptoError> {
+        if my_identity.is_shredded() {
+            return Err(CryptoError::IdentityShredded);
+        }
+        if my_identity.tenant_id() != self.tenant_id {
+            return Err(CryptoError::TenantMismatch);
+        }
+
+        let message_key = self.derive_message_key(my_identity.user_id(), original_ratchet_step);
+        let nonce = provider.generate_nonce();
+
+        let corporate_escrow_sealed_key = match (self.policy, &self.tenant_compliance_pub) {
+            (EncryptionPolicy::CorporateEscrowDlp, Some(compliance_pub)) => Self::seal_escrow_key(
+                provider,
+                self.tenant_id,
+                self.channel_id,
+                original_message_id,
+                compliance_pub,
+                &message_key,
+            )?,
+            _ => Vec::new(),
+        };
+
+        let mut envelope = EncryptedEnvelope {
+            protocol_version: PROTOCOL_VERSION_V1,
+            cipher_suite: provider.suite_id() as i32,
+            tenant_id: self.tenant_id.to_vec(),
+            channel_id: self.channel_id.to_vec(),
+            message_id: original_message_id.to_vec(),
+            sender_user_id: my_identity.user_id().to_vec(),
+            sender_device_id: my_identity.device_id().to_vec(),
+            ratchet_step: original_ratchet_step,
+            nonce,
+            ciphertext: Vec::new(),
+            corporate_escrow_sealed_key,
+            ed25519_signature: Vec::new(),
+        };
+
+        let aad = envelope.canonical_aad();
+        envelope.ciphertext = provider.seal(&message_key, &envelope.nonce, &aad, new_plaintext)?;
+
+        let signing_bytes = envelope.canonical_signing_bytes();
+        let sig = my_identity.sign(&signing_bytes)?;
+        envelope.ed25519_signature = sig.to_vec();
+
+        Ok(envelope)
+    }
+
     /// Расшифровывает входящий конверт `EncryptedEnvelope` в живом потоке с защитой от **Replay-атак**
     /// (повторный пакет с тем же `ratchet_step` блокируется с `Err(CryptoError::ReplayAttackDetected)`).
     pub fn decrypt_message(

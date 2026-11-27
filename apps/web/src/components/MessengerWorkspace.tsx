@@ -4,7 +4,11 @@ import {
   Check,
   CheckCheck,
   ChevronDown,
+  Copy,
+  Pencil,
+  Reply,
   Search,
+  Trash2,
   X,
 } from "lucide-react";
 import { type WallpaperVariant } from "./TelegramPatternWallpapers";
@@ -35,6 +39,12 @@ interface PeerChatSummary {
   timestampMs: number;
   isMine: boolean;
   isReadByPeer: boolean;
+}
+
+interface MessageContextMenuState {
+  x: number;
+  y: number;
+  message: ClientDecryptedMessageItem;
 }
 
 const AVATAR_GRADIENTS = [
@@ -111,6 +121,16 @@ function getBubbleShapeClasses(
   const topLeft = isFirstInGroup ? "rounded-tl-[18px]" : "rounded-tl-[6px]";
   const bottomLeft = isLastInGroup ? "rounded-bl-[4px]" : "rounded-bl-[6px]";
   return `rounded-r-[18px] ${topLeft} ${bottomLeft}`;
+}
+
+function getReplyQuoteClasses(isMine: boolean, isDark: boolean): string {
+  if (isMine) {
+    return "border-sky-300 bg-sky-950/35 hover:bg-sky-950/50";
+  }
+  if (isDark) {
+    return "border-sky-400 bg-zinc-800/70 hover:bg-zinc-800";
+  }
+  return "border-sky-500 bg-sky-50 hover:bg-sky-100/80";
 }
 
 /**
@@ -216,6 +236,16 @@ export const MessengerWorkspace: React.FC<MessengerWorkspaceProps> = ({
   const [messages, setMessages] = useState<ClientDecryptedMessageItem[]>([]);
   const [messageInput, setMessageInput] = useState<string>("");
 
+  // Контекстное меню ПКМ по сообщению, состояния Ответа (Reply), Редактирования (Edit) и подсветки цитаты
+  const [contextMenu, setContextMenu] =
+    useState<MessageContextMenuState | null>(null);
+  const [replyingToMessage, setReplyingToMessage] =
+    useState<ClientDecryptedMessageItem | null>(null);
+  const [editingMessage, setEditingMessage] =
+    useState<ClientDecryptedMessageItem | null>(null);
+  const [highlightedMessageId, setHighlightedMessageId] = useState<string>("");
+  const [copiedToastVisible, setCopiedToastVisible] = useState<boolean>(false);
+
   // Индикатор набора текста и непрочитанных сообщений (бинарный WebSocket)
   const [peerTyping, setPeerTyping] = useState<Record<string, number>>({});
   const [unreadByPeer, setUnreadByPeer] = useState<Record<string, number>>({});
@@ -227,6 +257,7 @@ export const MessengerWorkspace: React.FC<MessengerWorkspaceProps> = ({
   const activeUserRef = useRef<string>(activeUsername);
   const messagesContainerRef = useRef<HTMLDivElement | null>(null);
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
+  const messageInputRef = useRef<HTMLInputElement | null>(null);
   const isNearBottomRef = useRef<boolean>(true);
   const prevMessagesLenRef = useRef<number>(0);
   const lastTypingSentRef = useRef<number>(0);
@@ -380,9 +411,37 @@ export const MessengerWorkspace: React.FC<MessengerWorkspaceProps> = ({
       prevMessagesLenRef.current = 0;
       setShowScrollToBottom(false);
       setUnseenBelowCount(0);
+      setContextMenu(null);
+      setReplyingToMessage(null);
+      setEditingMessage(null);
       void loadChatHistory(selectedPeer);
     }
   }, [selectedPeer, activeUsername, loadChatHistory]);
+
+  // Закрытие контекстного меню ПКМ по клику вне меню, скроллу или клавише Escape
+  useEffect(() => {
+    const handleGlobalClick = () => {
+      setContextMenu(null);
+    };
+    const handleKeyDown = (ev: KeyboardEvent) => {
+      if (ev.key === "Escape") {
+        if (contextMenu) {
+          setContextMenu(null);
+        } else if (editingMessage) {
+          setEditingMessage(null);
+          setMessageInput("");
+        } else if (replyingToMessage) {
+          setReplyingToMessage(null);
+        }
+      }
+    };
+    window.addEventListener("click", handleGlobalClick);
+    window.addEventListener("keydown", handleKeyDown);
+    return () => {
+      window.removeEventListener("click", handleGlobalClick);
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [contextMenu, editingMessage, replyingToMessage]);
 
   // Умная автопрокрутка: скроллит вниз при открытии чата, отправке своего сообщения или если юзер уже внизу ленты
   useEffect(() => {
@@ -551,17 +610,177 @@ export const MessengerWorkspace: React.FC<MessengerWorkspaceProps> = ({
     }
   };
 
-  // Мгновенная (0ms Optimistic UI) отправка E2EE сообщения через бинарный Protobuf
+  const resolveSenderDisplayName = useCallback(
+    (uname: string): string => {
+      if (!uname) return "";
+      if (uname === activeUsername) return "Вы";
+      const found = directoryPeers.find((p) => p.username === uname);
+      return found?.display_name || uname;
+    },
+    [activeUsername, directoryPeers]
+  );
+
+  // Открытие кастомного контекстного меню по правому клику (ПКМ) на баббл сообщения
+  const handleMessageContextMenu = (
+    e: React.MouseEvent,
+    msg: ClientDecryptedMessageItem
+  ) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const menuWidth = 196;
+    const menuHeight = msg.sender_username === activeUsername ? 176 : 104;
+    const clampedX = Math.max(
+      16,
+      Math.min(e.clientX, window.innerWidth - menuWidth - 16)
+    );
+    const clampedY = Math.max(
+      16,
+      Math.min(e.clientY, window.innerHeight - menuHeight - 16)
+    );
+    setContextMenu({
+      x: clampedX,
+      y: clampedY,
+      message: msg,
+    });
+  };
+
+  const handleStartReply = (msg: ClientDecryptedMessageItem) => {
+    setContextMenu(null);
+    setEditingMessage(null);
+    setReplyingToMessage(msg);
+    window.setTimeout(() => {
+      messageInputRef.current?.focus();
+    }, 10);
+  };
+
+  const handleCopyMessageText = (msg: ClientDecryptedMessageItem) => {
+    setContextMenu(null);
+    if (navigator.clipboard) {
+      navigator.clipboard
+        .writeText(msg.decrypted_text)
+        .then(() => {
+          setCopiedToastVisible(true);
+          window.setTimeout(() => setCopiedToastVisible(false), 1800);
+        })
+        .catch(() => {});
+    }
+  };
+
+  const handleStartEdit = (msg: ClientDecryptedMessageItem) => {
+    setContextMenu(null);
+    if (msg.sender_username !== activeUsername) return;
+    setReplyingToMessage(null);
+    setEditingMessage(msg);
+    setMessageInput(msg.decrypted_text);
+    window.setTimeout(() => {
+      messageInputRef.current?.focus();
+    }, 10);
+  };
+
+  const handleDeleteMessage = async (msg: ClientDecryptedMessageItem) => {
+    setContextMenu(null);
+    const peer = selectedPeer;
+    if (!peer) return;
+
+    if (replyingToMessage?.message_id_short === msg.message_id_short) {
+      setReplyingToMessage(null);
+    }
+    if (editingMessage?.message_id_short === msg.message_id_short) {
+      setEditingMessage(null);
+      setMessageInput("");
+    }
+
+    // Оптимистичное удаление из ленты за 0 мс
+    setMessages((prev) => {
+      const filtered = prev.filter(
+        (item) => item.message_id_short !== msg.message_id_short
+      );
+      const last = filtered[filtered.length - 1];
+      setChatSummaries((prevSum) => ({
+        ...prevSum,
+        [peer]: {
+          lastText: last ? last.decrypted_text : "",
+          timestampMs: last ? last.timestamp_ms : 0,
+          isMine: last ? last.sender_username === activeUsername : false,
+          isReadByPeer: last ? last.is_read_by_peer : false,
+        },
+      }));
+      return filtered;
+    });
+
+    if (!msg.message_id_short.startsWith("opt-")) {
+      const resp = await callClientWireProtobuf({
+        op: ClientWireOp.DeleteChatMessage,
+        caller_username: activeUsername,
+        peer_username: peer,
+        target_message_id_short: msg.message_id_short,
+      });
+      if (resp.ok) {
+        void loadChatHistory(peer, false);
+      }
+    }
+  };
+
+  const scrollToQuotedMessage = (targetShortId: string) => {
+    if (!targetShortId) return;
+    const el = document.getElementById(`msg-bubble-${targetShortId}`);
+    if (el) {
+      el.scrollIntoView({ behavior: "smooth", block: "center" });
+      setHighlightedMessageId(targetShortId);
+      window.setTimeout(() => {
+        setHighlightedMessageId((curr) =>
+          curr === targetShortId ? "" : curr
+        );
+      }, 1500);
+    }
+  };
+
+  // Мгновенная (0ms Optimistic UI) отправка или редактирование E2EE сообщения через бинарный Protobuf
   const handleSendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
     const text = messageInput.trim();
     const peer = selectedPeer;
     if (!text || !peer) return;
 
+    // Режим редактирования существующего сообщения
+    if (editingMessage) {
+      const targetMsg = editingMessage;
+      setEditingMessage(null);
+      setMessageInput("");
+
+      setMessages((prev) =>
+        prev.map((item) =>
+          item.message_id_short === targetMsg.message_id_short
+            ? { ...item, decrypted_text: text, is_edited: true }
+            : item
+        )
+      );
+
+      if (!targetMsg.message_id_short.startsWith("opt-")) {
+        const editResp = await callClientWireProtobuf({
+          op: ClientWireOp.EditChatMessage,
+          caller_username: activeUsername,
+          peer_username: peer,
+          target_message_id_short: targetMsg.message_id_short,
+          plaintext_message: text,
+        });
+        if (editResp.ok) {
+          void loadChatHistory(peer, false);
+        }
+      }
+      return;
+    }
+
     const nowMs = Date.now();
-    // 1. Мгновенно очищаем инпут (самолетик сразу улетает, капсула плавно сжимается без спиннера)
+    const currentReply = replyingToMessage;
+    // 1. Мгновенно очищаем инпут и плашку цитаты (самолетик сразу улетает, капсула плавно сжимается)
     setMessageInput("");
+    setReplyingToMessage(null);
     setActiveChatPeers((prev) => (prev.includes(peer) ? prev : [peer, ...prev]));
+
+    const replyIdShort = currentReply?.message_id_short ?? "";
+    const replySender = currentReply?.sender_username ?? "";
+    const replyText = currentReply?.decrypted_text ?? "";
 
     // 2. Оптимистично добавляем сообщение в ленту чата и превью слева за 0 мс
     const optimisticId = `opt-${nowMs}`;
@@ -578,6 +797,10 @@ export const MessengerWorkspace: React.FC<MessengerWorkspaceProps> = ({
         nonce_hex: "",
         ciphertext_hex: "",
         signature_hex_short: "",
+        reply_to_message_id_short: replyIdShort,
+        reply_to_sender: replySender,
+        reply_to_text: replyText,
+        is_edited: false,
       },
     ]);
     setChatSummaries((prev) => ({
@@ -596,6 +819,9 @@ export const MessengerWorkspace: React.FC<MessengerWorkspaceProps> = ({
       caller_username: activeUsername,
       peer_username: peer,
       plaintext_message: text,
+      reply_to_message_id_short: replyIdShort,
+      reply_to_sender: replySender,
+      reply_to_text: replyText,
     });
     if (resp.ok) {
       void loadChatHistory(peer, false);
@@ -970,9 +1196,12 @@ export const MessengerWorkspace: React.FC<MessengerWorkspaceProps> = ({
                     )}
 
                     <motion.div
+                      id={`msg-bubble-${m.message_id_short}`}
                       initial={{ opacity: 0, y: 6, scale: 0.985 }}
                       animate={{ opacity: 1, y: 0, scale: 1 }}
                       transition={{ duration: 0.15, ease: [0.22, 1, 0.36, 1] }}
+                      onContextMenu={(e) => handleMessageContextMenu(e, m)}
+                      onDoubleClick={() => handleStartReply(m)}
                       className={cn(
                         "flex flex-col",
                         isMine ? "items-end" : "items-start",
@@ -981,15 +1210,49 @@ export const MessengerWorkspace: React.FC<MessengerWorkspaceProps> = ({
                     >
                       <div
                         className={cn(
-                          "relative max-w-lg px-3.5 py-1.5 shadow-md backdrop-blur-md",
+                          "relative max-w-lg px-3.5 py-1.5 shadow-md backdrop-blur-md transition-shadow duration-300",
                           bubbleShape,
                           isMine
                             ? "bg-[#2b5278] text-white"
                             : isDark
                               ? "border border-zinc-800/80 bg-[#181820]/95 text-zinc-100"
-                              : "border border-zinc-200/90 bg-white/95 text-zinc-900"
+                              : "border border-zinc-200/90 bg-white/95 text-zinc-900",
+                          highlightedMessageId === m.message_id_short &&
+                            "ring-2 ring-sky-400 shadow-sky-500/30"
                         )}
                       >
+                        {/* Встроенный блок цитируемого сообщения (Reply Quote), клик скроллит к оригиналу */}
+                        {m.reply_to_text && (
+                          <button
+                            type="button"
+                            onClick={(ev) => {
+                              ev.stopPropagation();
+                              scrollToQuotedMessage(m.reply_to_message_id_short);
+                            }}
+                            className={cn(
+                              "mb-1.5 flex w-full flex-col rounded-r-lg border-l-2 py-1 pr-2.5 pl-2.5 text-left transition-colors cursor-pointer",
+                              getReplyQuoteClasses(isMine, isDark)
+                            )}
+                          >
+                            <span
+                              className={cn(
+                                "truncate text-[11px] font-semibold leading-tight",
+                                isMine ? "text-sky-200" : "text-sky-400"
+                              )}
+                            >
+                              {resolveSenderDisplayName(m.reply_to_sender)}
+                            </span>
+                            <span
+                              className={cn(
+                                "truncate text-[12px] leading-snug",
+                                isMine ? "text-sky-100/85" : "text-zinc-400"
+                              )}
+                            >
+                              {m.reply_to_text}
+                            </span>
+                          </button>
+                        )}
+
                         {/* Аккуратная короткая микро-капелька (~2px) по диагонали вниз и вправо (↘) */}
                         {isLastInGroup && isMine && (
                           <svg
@@ -1032,6 +1295,9 @@ export const MessengerWorkspace: React.FC<MessengerWorkspaceProps> = ({
                               isMine ? "text-sky-100/75" : "text-zinc-400"
                             )}
                           >
+                            {m.is_edited && (
+                              <span className="italic opacity-80">изм.</span>
+                            )}
                             <span>{formatShortTime(m.timestamp_ms)}</span>
 
                             {isMine &&
@@ -1088,46 +1354,225 @@ export const MessengerWorkspace: React.FC<MessengerWorkspaceProps> = ({
               )}
             </AnimatePresence>
 
-            {/* Плавающая нижняя капсула ввода поверх полновысотной ленты сообщений */}
-            <footer className="pointer-events-none absolute inset-x-0 bottom-5 z-20 px-8">
-              <form
-                onSubmit={handleSendMessage}
-                className="pointer-events-auto mx-auto flex w-full max-w-[640px] items-center justify-center"
-              >
+            {/* Всплывающее уведомление «Скопировано» */}
+            <AnimatePresence>
+              {copiedToastVisible && (
                 <motion.div
-                  layout
-                  initial={false}
-                  animate={{
-                    width: messageInput.trim().length > 0 ? 624 : 568,
-                    paddingRight: messageInput.trim().length > 0 ? 6 : 20,
-                  }}
-                  transition={{
-                    type: "spring",
-                    stiffness: 380,
-                    damping: 26,
-                    mass: 0.72,
-                  }}
-                  style={{ originX: 0 }}
+                  key="copied-toast"
+                  initial={{ opacity: 0, y: -10, scale: 0.92 }}
+                  animate={{ opacity: 1, y: 0, scale: 1 }}
+                  exit={{ opacity: 0, y: -10, scale: 0.92 }}
+                  transition={{ duration: 0.16 }}
                   className={cn(
-                    "relative flex h-11 max-w-full items-center overflow-hidden rounded-full border pl-5 shadow-lg backdrop-blur-xl",
+                    "pointer-events-none absolute top-20 left-1/2 z-30 -translate-x-1/2 rounded-full border px-4 py-1.5 text-xs font-medium shadow-xl backdrop-blur-xl",
                     isDark
-                      ? "border-zinc-800/90 bg-[#17171f]/92"
-                      : "border-zinc-200/90 bg-white/95"
+                      ? "border-zinc-700/80 bg-[#1c1c26]/95 text-zinc-100"
+                      : "border-zinc-200 bg-white/95 text-zinc-800"
                   )}
                 >
-                  <input
-                    type="text"
-                    value={messageInput}
-                    onChange={(e) => handleInputTyping(e.target.value)}
-                    placeholder="Сообщение"
-                    aria-label="Сообщение"
+                  Текст скопирован в буфер обмена
+                </motion.div>
+              )}
+            </AnimatePresence>
+
+            {/* Контекстное меню ПКМ по сообщению (Ответить / Копировать / Изменить / Удалить) */}
+            <AnimatePresence>
+              {contextMenu && (
+                <motion.div
+                  key="msg-context-menu"
+                  initial={{ opacity: 0, scale: 0.9, y: 4 }}
+                  animate={{ opacity: 1, scale: 1, y: 0 }}
+                  exit={{ opacity: 0, scale: 0.92, y: 4 }}
+                  transition={{
+                    type: "spring",
+                    stiffness: 460,
+                    damping: 28,
+                    mass: 0.55,
+                  }}
+                  style={{
+                    left: contextMenu.x,
+                    top: contextMenu.y,
+                  }}
+                  onClick={(ev) => ev.stopPropagation()}
+                  className={cn(
+                    "fixed z-50 w-48 overflow-hidden rounded-2xl border p-1.5 shadow-2xl backdrop-blur-2xl",
+                    isDark
+                      ? "border-zinc-800/90 bg-[#171720]/95 text-zinc-100"
+                      : "border-zinc-200/90 bg-white/95 text-zinc-800"
+                  )}
+                >
+                  <button
+                    type="button"
+                    onClick={() => handleStartReply(contextMenu.message)}
                     className={cn(
-                      "h-full min-w-0 flex-1 bg-transparent text-sm outline-none",
-                      isDark
-                        ? "text-zinc-100 placeholder:text-zinc-500"
-                        : "text-zinc-900 placeholder:text-zinc-400"
+                      "flex w-full items-center gap-2.5 rounded-xl px-3 py-2 text-left text-xs font-medium transition-colors cursor-pointer",
+                      isDark ? "hover:bg-zinc-800/80" : "hover:bg-zinc-100"
+                    )}
+                  >
+                    <Reply className="h-3.5 w-3.5 text-sky-400" />
+                    <span>Ответить</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => handleCopyMessageText(contextMenu.message)}
+                    className={cn(
+                      "flex w-full items-center gap-2.5 rounded-xl px-3 py-2 text-left text-xs font-medium transition-colors cursor-pointer",
+                      isDark ? "hover:bg-zinc-800/80" : "hover:bg-zinc-100"
+                    )}
+                  >
+                    <Copy className="h-3.5 w-3.5 text-zinc-400" />
+                    <span>Копировать текст</span>
+                  </button>
+
+                  {contextMenu.message.sender_username === activeUsername &&
+                    !contextMenu.message.message_id_short.startsWith("opt-") && (
+                      <button
+                        type="button"
+                        onClick={() => handleStartEdit(contextMenu.message)}
+                        className={cn(
+                          "flex w-full items-center gap-2.5 rounded-xl px-3 py-2 text-left text-xs font-medium transition-colors cursor-pointer",
+                          isDark ? "hover:bg-zinc-800/80" : "hover:bg-zinc-100"
+                        )}
+                      >
+                        <Pencil className="h-3.5 w-3.5 text-amber-400" />
+                        <span>Изменить</span>
+                      </button>
+                    )}
+
+                  <div
+                    className={cn(
+                      "my-1 h-px",
+                      isDark ? "bg-zinc-800/80" : "bg-zinc-200/80"
                     )}
                   />
+
+                  <button
+                    type="button"
+                    onClick={() => void handleDeleteMessage(contextMenu.message)}
+                    className={cn(
+                      "flex w-full items-center gap-2.5 rounded-xl px-3 py-2 text-left text-xs font-medium text-rose-400 transition-colors cursor-pointer",
+                      isDark ? "hover:bg-rose-500/15" : "hover:bg-rose-50"
+                    )}
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                    <span>Удалить</span>
+                  </button>
+                </motion.div>
+              )}
+            </AnimatePresence>
+
+            {/* Плавающая нижняя капсула ввода + плашка Ответа (Reply) или Редактирования (Edit) */}
+            <footer className="pointer-events-none absolute inset-x-0 bottom-5 z-20 px-8">
+              <div className="mx-auto flex w-full max-w-[640px] flex-col items-center">
+                <AnimatePresence>
+                  {(replyingToMessage || editingMessage) && (
+                    <motion.div
+                      key="compose-action-banner"
+                      initial={{ opacity: 0, y: 10, scale: 0.96 }}
+                      animate={{ opacity: 1, y: 0, scale: 1 }}
+                      exit={{ opacity: 0, y: 10, scale: 0.96 }}
+                      transition={{
+                        type: "spring",
+                        stiffness: 420,
+                        damping: 28,
+                      }}
+                      className={cn(
+                        "pointer-events-auto mb-2 flex w-[568px] max-w-full items-center justify-between gap-3 rounded-2xl border px-4 py-2 shadow-lg backdrop-blur-xl",
+                        isDark
+                          ? "border-zinc-800/90 bg-[#17171f]/95 text-zinc-100"
+                          : "border-zinc-200/90 bg-white/95 text-zinc-900"
+                      )}
+                    >
+                      <div className="flex min-w-0 flex-1 items-center gap-2.5">
+                        {editingMessage ? (
+                          <Pencil className="h-4 w-4 shrink-0 text-amber-400" />
+                        ) : (
+                          <Reply className="h-4 w-4 shrink-0 text-sky-400" />
+                        )}
+                        <div
+                          className={cn(
+                            "h-7 w-0.5 shrink-0 rounded-full",
+                            editingMessage ? "bg-amber-400" : "bg-sky-400"
+                          )}
+                        />
+                        <div className="flex min-w-0 flex-1 flex-col">
+                          <span
+                            className={cn(
+                              "truncate text-[11.5px] font-semibold leading-tight",
+                              editingMessage ? "text-amber-400" : "text-sky-400"
+                            )}
+                          >
+                            {editingMessage
+                              ? "Редактирование сообщения"
+                              : `В ответ ${resolveSenderDisplayName(replyingToMessage?.sender_username ?? "")}`}
+                          </span>
+                          <span className="truncate text-xs text-zinc-400">
+                            {editingMessage
+                              ? editingMessage.decrypted_text
+                              : replyingToMessage?.decrypted_text}
+                          </span>
+                        </div>
+                      </div>
+
+                      <button
+                        type="button"
+                        aria-label="Отменить действие"
+                        onClick={() => {
+                          if (editingMessage) {
+                            setEditingMessage(null);
+                            setMessageInput("");
+                          } else {
+                            setReplyingToMessage(null);
+                          }
+                        }}
+                        className="rounded-full p-1 text-zinc-400 hover:bg-zinc-800/50 hover:text-zinc-200 cursor-pointer"
+                      >
+                        <X className="h-4 w-4" />
+                      </button>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+
+                <form
+                  onSubmit={handleSendMessage}
+                  className="pointer-events-auto flex w-full items-center justify-center"
+                >
+                  <motion.div
+                    layout
+                    initial={false}
+                    animate={{
+                      width: messageInput.trim().length > 0 ? 624 : 568,
+                      paddingRight: messageInput.trim().length > 0 ? 6 : 20,
+                    }}
+                    transition={{
+                      type: "spring",
+                      stiffness: 380,
+                      damping: 26,
+                      mass: 0.72,
+                    }}
+                    style={{ originX: 0 }}
+                    className={cn(
+                      "relative flex h-11 max-w-full items-center overflow-hidden rounded-full border pl-5 shadow-lg backdrop-blur-xl",
+                      isDark
+                        ? "border-zinc-800/90 bg-[#17171f]/92"
+                        : "border-zinc-200/90 bg-white/95"
+                    )}
+                  >
+                    <input
+                      ref={messageInputRef}
+                      type="text"
+                      value={messageInput}
+                      onChange={(e) => handleInputTyping(e.target.value)}
+                      placeholder="Сообщение"
+                      aria-label="Сообщение"
+                      className={cn(
+                        "h-full min-w-0 flex-1 bg-transparent text-sm outline-none",
+                        isDark
+                          ? "text-zinc-100 placeholder:text-zinc-500"
+                          : "text-zinc-900 placeholder:text-zinc-400"
+                      )}
+                    />
 
                   <AnimatePresence initial={false}>
                     {messageInput.trim().length > 0 && (
@@ -1174,7 +1619,8 @@ export const MessengerWorkspace: React.FC<MessengerWorkspaceProps> = ({
                   </AnimatePresence>
                 </motion.div>
               </form>
-            </footer>
+            </div>
+          </footer>
           </>
         )}
       </main>

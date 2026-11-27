@@ -13,6 +13,8 @@ export const ClientWireOp = {
   MarkChatRead: 9,
   CloudSyncNewDevice: 10,
   CheckUsername: 11,
+  EditChatMessage: 12,
+  DeleteChatMessage: 13,
 } as const;
 
 export type ClientWireOpCode = (typeof ClientWireOp)[keyof typeof ClientWireOp];
@@ -28,6 +30,10 @@ export interface ClientWireRequest {
   domain?: string;
   search_query?: string;
   plaintext_message?: string;
+  target_message_id_short?: string;
+  reply_to_message_id_short?: string;
+  reply_to_sender?: string;
+  reply_to_text?: string;
 }
 
 export interface ClientDirectoryPeer {
@@ -54,6 +60,10 @@ export interface ClientDecryptedMessageItem {
   nonce_hex: string;
   ciphertext_hex: string;
   signature_hex_short: string;
+  reply_to_message_id_short: string;
+  reply_to_sender: string;
+  reply_to_text: string;
+  is_edited: boolean;
 }
 
 export interface ClientWireResponse {
@@ -97,7 +107,11 @@ const ClientWireRequestProtoType = new protobuf.Type("ClientWireRequestProto")
   .add(new protobuf.Field("recovery_key", 7, "string"))
   .add(new protobuf.Field("domain", 8, "string"))
   .add(new protobuf.Field("search_query", 9, "string"))
-  .add(new protobuf.Field("plaintext_message", 10, "string"));
+  .add(new protobuf.Field("plaintext_message", 10, "string"))
+  .add(new protobuf.Field("target_message_id_short", 11, "string"))
+  .add(new protobuf.Field("reply_to_message_id_short", 12, "string"))
+  .add(new protobuf.Field("reply_to_sender", 13, "string"))
+  .add(new protobuf.Field("reply_to_text", 14, "string"));
 
 const ClientDirectoryPeerProtoType = new protobuf.Type("ClientDirectoryPeerProto")
   .add(new protobuf.Field("username", 1, "string"))
@@ -121,7 +135,11 @@ const ClientDecryptedMessageItemProtoType = new protobuf.Type("ClientDecryptedMe
   .add(new protobuf.Field("wire_bytes_len", 7, "uint32"))
   .add(new protobuf.Field("nonce_hex", 8, "string"))
   .add(new protobuf.Field("ciphertext_hex", 9, "string"))
-  .add(new protobuf.Field("signature_hex_short", 10, "string"));
+  .add(new protobuf.Field("signature_hex_short", 10, "string"))
+  .add(new protobuf.Field("reply_to_message_id_short", 11, "string"))
+  .add(new protobuf.Field("reply_to_sender", 12, "string"))
+  .add(new protobuf.Field("reply_to_text", 13, "string"))
+  .add(new protobuf.Field("is_edited", 14, "bool"));
 
 const ClientWireResponseProtoType = new protobuf.Type("ClientWireResponseProto")
   .add(new protobuf.Field("ok", 1, "bool"))
@@ -176,6 +194,10 @@ export function encodeClientWireRequest(req: ClientWireRequest): Uint8Array {
     domain: req.domain ?? "",
     search_query: req.search_query ?? "",
     plaintext_message: req.plaintext_message ?? "",
+    target_message_id_short: req.target_message_id_short ?? "",
+    reply_to_message_id_short: req.reply_to_message_id_short ?? "",
+    reply_to_sender: req.reply_to_sender ?? "",
+    reply_to_text: req.reply_to_text ?? "",
   });
   return ClientWireRequestProtoType.encode(msg).finish();
 }
@@ -230,6 +252,10 @@ export function decodeClientWireResponse(bytes: Uint8Array): ClientWireResponse 
       nonce_hex: String(m.nonce_hex ?? ""),
       ciphertext_hex: String(m.ciphertext_hex ?? ""),
       signature_hex_short: String(m.signature_hex_short ?? ""),
+      reply_to_message_id_short: String(m.reply_to_message_id_short ?? ""),
+      reply_to_sender: String(m.reply_to_sender ?? ""),
+      reply_to_text: String(m.reply_to_text ?? ""),
+      is_edited: Boolean(m.is_edited),
     })),
   };
 }

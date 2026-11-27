@@ -507,6 +507,74 @@ async fn test_cold_reboot_account_email_password_and_chat_persistence_in_redb() 
             "Второе сообщение уже после перезапуска сервера!"
         );
 
+        // 5. Проверяем Reply с цитатой, EditChatMessage и DeleteChatMessage в бинарном Protobuf + redb!
+        let first_msg_short_id = hist_after_send.messages[0].message_id_short.clone();
+        let reply_resp = call_proto(ClientWireRequestProto {
+            op: ClientWireOp::SendChatMessage as i32,
+            caller_username: "vadim_dev".to_string(),
+            peer_username: "alice_ceo".to_string(),
+            plaintext_message: "Ответ с цитатой на первое сообщение".to_string(),
+            reply_to_message_id_short: first_msg_short_id.clone(),
+            reply_to_sender: "vadim_dev".to_string(),
+            reply_to_text: "Сообщение переживёт полный перезапуск сервера!".to_string(),
+            ..ClientWireRequestProto::default()
+        })
+        .await;
+        assert!(reply_resp.ok, "Reply send: {}", reply_resp.error_message);
+
+        // Редактируем первое сообщение
+        let edit_resp = call_proto(ClientWireRequestProto {
+            op: ClientWireOp::EditChatMessage as i32,
+            caller_username: "vadim_dev".to_string(),
+            peer_username: "alice_ceo".to_string(),
+            target_message_id_short: first_msg_short_id.clone(),
+            plaintext_message: "Отредактированное первое сообщение!".to_string(),
+            ..ClientWireRequestProto::default()
+        })
+        .await;
+        assert!(edit_resp.ok, "Edit message: {}", edit_resp.error_message);
+
+        let hist_after_edit = call_proto(ClientWireRequestProto {
+            op: ClientWireOp::FetchChatHistory as i32,
+            caller_username: "vadim_dev".to_string(),
+            peer_username: "alice_ceo".to_string(),
+            ..ClientWireRequestProto::default()
+        })
+        .await;
+        assert!(hist_after_edit.ok);
+        assert_eq!(hist_after_edit.messages.len(), 3);
+        assert_eq!(
+            hist_after_edit.messages[0].decrypted_text,
+            "Отредактированное первое сообщение!"
+        );
+        assert!(hist_after_edit.messages[0].is_edited);
+        assert_eq!(
+            hist_after_edit.messages[2].reply_to_text,
+            "Сообщение переживёт полный перезапуск сервера!"
+        );
+
+        // Удаляем второе сообщение из RAM и с диска redb
+        let second_msg_short_id = hist_after_edit.messages[1].message_id_short.clone();
+        let del_resp = call_proto(ClientWireRequestProto {
+            op: ClientWireOp::DeleteChatMessage as i32,
+            caller_username: "vadim_dev".to_string(),
+            peer_username: "alice_ceo".to_string(),
+            target_message_id_short: second_msg_short_id,
+            ..ClientWireRequestProto::default()
+        })
+        .await;
+        assert!(del_resp.ok, "Delete message: {}", del_resp.error_message);
+
+        let hist_after_del = call_proto(ClientWireRequestProto {
+            op: ClientWireOp::FetchChatHistory as i32,
+            caller_username: "vadim_dev".to_string(),
+            peer_username: "alice_ceo".to_string(),
+            ..ClientWireRequestProto::default()
+        })
+        .await;
+        assert!(hist_after_del.ok);
+        assert_eq!(hist_after_del.messages.len(), 2);
+
         server_task.abort();
     }
 }
