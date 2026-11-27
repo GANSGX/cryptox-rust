@@ -1159,10 +1159,10 @@ export const MessengerWorkspace: React.FC<MessengerWorkspaceProps> = ({
             <header className="pointer-events-none absolute inset-x-0 top-3 z-20 flex items-center justify-center px-4">
               <div
                 className={cn(
-                  "pointer-events-auto flex w-full max-w-[668px] items-center justify-between gap-3 rounded-full border px-3 py-1.5 shadow-lg backdrop-blur-xl",
+                  "pointer-events-auto flex w-full max-w-[668px] items-center justify-between gap-3 rounded-full border px-3 py-1.5 shadow-xl backdrop-blur-2xl",
                   isDark
-                    ? "border-zinc-800/80 bg-[#17171f]/88"
-                    : "border-zinc-200/80 bg-white/92"
+                    ? "border-zinc-800/90 bg-[#17171f]/95"
+                    : "border-zinc-200/90 bg-white/95"
                 )}
               >
                 <div className="flex min-w-0 flex-1 items-center gap-3">
@@ -1247,10 +1247,16 @@ export const MessengerWorkspace: React.FC<MessengerWorkspaceProps> = ({
               </div>
             </header>
 
-            {/* Полновысотная область скролла (скроллбар у правого края экрана, а сама лента сообщений — строго той же ширины 668px, что шапка и инпут) */}
+            {/* Полновысотная область скролла с мягкой маской затухания сообщений под верхней шапкой и нижним инпутом */}
             <div
               ref={messagesContainerRef}
               onScroll={handleMessagesScroll}
+              style={{
+                maskImage:
+                  "linear-gradient(to bottom, transparent 0px, transparent 18px, rgba(0,0,0,0.08) 46px, black 74px, black calc(100% - 68px), rgba(0,0,0,0.08) calc(100% - 46px), transparent calc(100% - 22px), transparent 100%)",
+                WebkitMaskImage:
+                  "linear-gradient(to bottom, transparent 0px, transparent 18px, rgba(0,0,0,0.08) 46px, black 74px, black calc(100% - 68px), rgba(0,0,0,0.08) calc(100% - 46px), transparent calc(100% - 22px), transparent 100%)",
+              }}
               className={cn(
                 "relative z-10 h-full w-full px-4",
                 messages.length === 0 ? "overflow-hidden" : "overflow-y-auto"
@@ -1418,7 +1424,7 @@ export const MessengerWorkspace: React.FC<MessengerWorkspaceProps> = ({
                 ref={messagesEndRef}
                 className={cn(
                   "w-full shrink-0",
-                  replyingToMessage || editingMessage ? "h-36" : "h-24"
+                  replyingToMessage || editingMessage ? "h-[126px]" : "h-[74px]"
                 )}
               />
               </div>
