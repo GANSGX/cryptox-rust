@@ -1152,40 +1152,64 @@ export const MessengerWorkspace: React.FC<MessengerWorkspaceProps> = ({
           </div>
         ) : (
           <>
-            {/* Плавающая капсула собеседника сверху по центру (поверх полновысотного скролла чата) */}
-            <header className="pointer-events-none absolute inset-x-0 top-3 z-20 flex items-center justify-center px-6">
+            {/* Верхняя плавающая капсула собеседника в ширину центральной колонки чата (как в Telegram Web на ПК) */}
+            <header className="pointer-events-none absolute inset-x-0 top-3 z-20 flex items-center justify-center px-4">
               <div
                 className={cn(
-                  "pointer-events-auto flex min-w-[200px] flex-col items-center justify-center rounded-full border px-6 py-1.5 shadow-lg backdrop-blur-xl",
+                  "pointer-events-auto flex w-full max-w-[668px] items-center gap-3 rounded-full border px-3 py-1.5 shadow-lg backdrop-blur-xl",
                   isDark
-                    ? "border-zinc-800/80 bg-[#17171f]/85"
-                    : "border-zinc-200/80 bg-white/90"
+                    ? "border-zinc-800/80 bg-[#17171f]/88"
+                    : "border-zinc-200/80 bg-white/92"
                 )}
               >
-                <span className="text-[14px] font-semibold leading-tight">
-                  {activePeerObj.display_name}
-                </span>
-                <span className="text-[11px] text-zinc-400">
-                  {peerTyping[activePeerObj.username] ? (
-                    <span className="font-medium text-sky-400">печатает...</span>
-                  ) : activePeerObj.is_online ? (
-                    <span className="font-medium text-emerald-400">в сети</span>
-                  ) : (
-                    "был(а) недавно"
+                <div
+                  className={cn(
+                    "relative flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-gradient-to-br text-xs font-bold text-white shadow-xs",
+                    avatarGradientFor(activePeerObj.username)
                   )}
-                </span>
+                >
+                  {initials(activePeerObj.display_name || activePeerObj.username)}
+                  {activePeerObj.is_online && (
+                    <span
+                      className={cn(
+                        "absolute right-0 bottom-0 h-2.5 w-2.5 rounded-full border-2 bg-emerald-500",
+                        isDark ? "border-[#17171f]" : "border-white"
+                      )}
+                    />
+                  )}
+                </div>
+
+                <div className="flex min-w-0 flex-col">
+                  <span className="truncate text-[14px] font-semibold leading-tight">
+                    {activePeerObj.display_name}
+                  </span>
+                  <span className="truncate text-[11.5px] text-zinc-400">
+                    {peerTyping[activePeerObj.username] ? (
+                      <span className="font-medium text-sky-400">
+                        печатает...
+                      </span>
+                    ) : activePeerObj.is_online ? (
+                      <span className="font-medium text-emerald-400">
+                        в сети
+                      </span>
+                    ) : (
+                      "был(а) недавно"
+                    )}
+                  </span>
+                </div>
               </div>
             </header>
 
-            {/* Полновысотная область сообщений от самого верха до самого низа экрана (скроллбар во всю высоту окна!) */}
+            {/* Полновысотная область скролла (скроллбар у правого края экрана, а сама лента сообщений — в центральной колонке 700px как в ТГ Web) */}
             <div
               ref={messagesContainerRef}
               onScroll={handleMessagesScroll}
               className={cn(
-                "relative z-10 h-full w-full px-8 pt-20",
+                "relative z-10 h-full w-full",
                 messages.length === 0 ? "overflow-hidden" : "overflow-y-auto"
               )}
             >
+              <div className="mx-auto flex min-h-full w-full max-w-[700px] flex-col justify-end px-4 pt-20">
               {messages.map((m, idx) => {
                 const isMine = m.sender_username === activeUsername;
                 const prevMsg = idx > 0 ? messages[idx - 1] : undefined;
@@ -1350,9 +1374,10 @@ export const MessengerWorkspace: React.FC<MessengerWorkspaceProps> = ({
                   replyingToMessage || editingMessage ? "h-36" : "h-24"
                 )}
               />
+              </div>
             </div>
 
-            {/* Плавающая кнопка быстрого скролла вниз «↓» (появляется при прокрутке истории вверх) */}
+            {/* Плавающая кнопка быстрого скролла вниз «↓» у правого края центральной колонки чата */}
             <AnimatePresence>
               {showScrollToBottom && messages.length > 0 && (
                 <motion.button
@@ -1370,7 +1395,7 @@ export const MessengerWorkspace: React.FC<MessengerWorkspaceProps> = ({
                   }}
                   whileTap={{ scale: 0.92 }}
                   className={cn(
-                    "absolute right-7 bottom-20 z-20 flex h-10 w-10 items-center justify-center rounded-full border shadow-xl backdrop-blur-xl transition-colors cursor-pointer",
+                    "absolute bottom-20 left-1/2 z-20 ml-[294px] flex h-10 w-10 items-center justify-center rounded-full border shadow-xl backdrop-blur-xl transition-colors cursor-pointer",
                     isDark
                       ? "border-zinc-800/90 bg-[#17171f]/90 text-zinc-200 hover:bg-zinc-800/90"
                       : "border-zinc-200/90 bg-white/95 text-zinc-700 hover:bg-zinc-100"
@@ -1600,8 +1625,8 @@ export const MessengerWorkspace: React.FC<MessengerWorkspaceProps> = ({
             </AnimatePresence>
 
             {/* Плавающая нижняя капсула ввода + плашка Ответа (Reply) или Редактирования (Edit) */}
-            <footer className="pointer-events-none absolute inset-x-0 bottom-5 z-20 px-8">
-              <div className="mx-auto flex w-full max-w-[640px] flex-col items-center">
+            <footer className="pointer-events-none absolute inset-x-0 bottom-5 z-20 px-4">
+              <div className="mx-auto flex w-full max-w-[668px] flex-col items-center">
                 <AnimatePresence>
                   {(replyingToMessage || editingMessage) && (
                     <motion.div
@@ -1615,7 +1640,7 @@ export const MessengerWorkspace: React.FC<MessengerWorkspaceProps> = ({
                         damping: 28,
                       }}
                       className={cn(
-                        "pointer-events-auto mb-2 flex w-[568px] max-w-full items-center justify-between gap-3 rounded-2xl border px-4 py-2 shadow-lg backdrop-blur-xl",
+                        "pointer-events-auto mb-2 flex w-[612px] max-w-full items-center justify-between gap-3 rounded-2xl border px-4 py-2 shadow-lg backdrop-blur-xl",
                         isDark
                           ? "border-zinc-800/90 bg-[#17171f]/95 text-zinc-100"
                           : "border-zinc-200/90 bg-white/95 text-zinc-900"
@@ -1679,7 +1704,7 @@ export const MessengerWorkspace: React.FC<MessengerWorkspaceProps> = ({
                     layout
                     initial={false}
                     animate={{
-                      width: messageInput.trim().length > 0 ? 624 : 568,
+                      width: messageInput.trim().length > 0 ? 668 : 612,
                       paddingRight: messageInput.trim().length > 0 ? 6 : 20,
                     }}
                     transition={{
