@@ -104,12 +104,12 @@ function getBubbleShapeClasses(
   isLastInGroup: boolean
 ): string {
   if (isMine) {
-    const topRight = isFirstInGroup ? "rounded-tr-[18px]" : "rounded-tr-[5px]";
-    const bottomRight = isLastInGroup ? "rounded-br-[3px]" : "rounded-br-[5px]";
+    const topRight = isFirstInGroup ? "rounded-tr-[18px]" : "rounded-tr-[6px]";
+    const bottomRight = isLastInGroup ? "rounded-br-[4px]" : "rounded-br-[6px]";
     return `rounded-l-[18px] ${topRight} ${bottomRight}`;
   }
-  const topLeft = isFirstInGroup ? "rounded-tl-[18px]" : "rounded-tl-[5px]";
-  const bottomLeft = isLastInGroup ? "rounded-bl-[3px]" : "rounded-bl-[5px]";
+  const topLeft = isFirstInGroup ? "rounded-tl-[18px]" : "rounded-tl-[6px]";
+  const bottomLeft = isLastInGroup ? "rounded-bl-[4px]" : "rounded-bl-[6px]";
   return `rounded-r-[18px] ${topLeft} ${bottomLeft}`;
 }
 
@@ -976,7 +976,8 @@ export const MessengerWorkspace: React.FC<MessengerWorkspaceProps> = ({
                       className={cn(
                         "flex flex-col",
                         isMine ? "items-end" : "items-start",
-                        isFirstInGroup ? "mt-2.5" : "mt-[3px]"
+                        isFirstInGroup ? "mt-2.5" : "mt-[3px]",
+                        isLastInGroup && "mb-1"
                       )}
                     >
                       <div
@@ -990,34 +991,35 @@ export const MessengerWorkspace: React.FC<MessengerWorkspaceProps> = ({
                               : "border border-zinc-200/90 bg-white/95 text-zinc-900"
                         )}
                       >
-                        {/* Анатомический хвостик только у последнего сообщения в группе (как в Telegram Web) */}
+                        {/* Хвостик-капелька, направленный по диагонали ВНИЗ и ВПРАВО (↘) у последнего баббла в группе */}
                         {isLastInGroup && isMine && (
                           <svg
-                            viewBox="0 0 11 20"
-                            width="11"
-                            height="20"
+                            viewBox="0 0 18 18"
+                            width="18"
+                            height="18"
                             aria-hidden="true"
-                            className="pointer-events-none absolute -right-[7px] bottom-0 text-[#2b5278]"
+                            className="pointer-events-none absolute -right-[4px] -bottom-[5px] text-[#2b5278]"
                           >
                             <path
-                              d="M0 0v14c0 3.3 2.7 6 6 6h4.2c.6 0 .9-.7.5-1.1C7.6 16.2 3 11.4 0 0z"
+                              d="M 2 13 L 14 2 C 14 7.8 14.9 11.8 16.9 15.1 C 17.6 16.2 16.5 17.4 15.2 16.8 C 11.6 15.2 7.4 13.2 2 13 Z"
                               fill="currentColor"
                             />
                           </svg>
                         )}
                         {isLastInGroup && !isMine && (
                           <svg
-                            viewBox="0 0 11 20"
-                            width="11"
-                            height="20"
+                            viewBox="0 0 18 18"
+                            width="18"
+                            height="18"
                             aria-hidden="true"
+                            style={{ transform: "scaleX(-1)" }}
                             className={cn(
-                              "pointer-events-none absolute -left-[7px] bottom-0",
+                              "pointer-events-none absolute -bottom-[5px] -left-[4px]",
                               isDark ? "text-[#181820]" : "text-white"
                             )}
                           >
                             <path
-                              d="M11 0v14c0 3.3-2.7 6-6 6H.8c-.6 0-.9-.7-.5-1.1C3.4 16.2 8 11.4 11 0z"
+                              d="M 2 13 L 14 2 C 14 7.8 14.9 11.8 16.9 15.1 C 17.6 16.2 16.5 17.4 15.2 16.8 C 11.6 15.2 7.4 13.2 2 13 Z"
                               fill="currentColor"
                             />
                           </svg>
