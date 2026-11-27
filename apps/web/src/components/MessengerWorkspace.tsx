@@ -5,7 +5,10 @@ import {
   CheckCheck,
   ChevronDown,
   Copy,
+  Mic,
+  MoreVertical,
   Pencil,
+  Phone,
   Reply,
   Search,
   Trash2,
@@ -1156,60 +1159,104 @@ export const MessengerWorkspace: React.FC<MessengerWorkspaceProps> = ({
             <header className="pointer-events-none absolute inset-x-0 top-3 z-20 flex items-center justify-center px-4">
               <div
                 className={cn(
-                  "pointer-events-auto flex w-full max-w-[668px] items-center gap-3 rounded-full border px-3 py-1.5 shadow-lg backdrop-blur-xl",
+                  "pointer-events-auto flex w-full max-w-[668px] items-center justify-between gap-3 rounded-full border px-3 py-1.5 shadow-lg backdrop-blur-xl",
                   isDark
                     ? "border-zinc-800/80 bg-[#17171f]/88"
                     : "border-zinc-200/80 bg-white/92"
                 )}
               >
-                <div
-                  className={cn(
-                    "relative flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-gradient-to-br text-xs font-bold text-white shadow-xs",
-                    avatarGradientFor(activePeerObj.username)
-                  )}
-                >
-                  {initials(activePeerObj.display_name || activePeerObj.username)}
-                  {activePeerObj.is_online && (
-                    <span
-                      className={cn(
-                        "absolute right-0 bottom-0 h-2.5 w-2.5 rounded-full border-2 bg-emerald-500",
-                        isDark ? "border-[#17171f]" : "border-white"
+                <div className="flex min-w-0 flex-1 items-center gap-3">
+                  <div
+                    className={cn(
+                      "relative flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-gradient-to-br text-xs font-bold text-white shadow-xs",
+                      avatarGradientFor(activePeerObj.username)
+                    )}
+                  >
+                    {initials(
+                      activePeerObj.display_name || activePeerObj.username
+                    )}
+                    {activePeerObj.is_online && (
+                      <span
+                        className={cn(
+                          "absolute right-0 bottom-0 h-2.5 w-2.5 rounded-full border-2 bg-emerald-500",
+                          isDark ? "border-[#17171f]" : "border-white"
+                        )}
+                      />
+                    )}
+                  </div>
+
+                  <div className="flex min-w-0 flex-col">
+                    <span className="truncate text-[14px] font-semibold leading-tight">
+                      {activePeerObj.display_name}
+                    </span>
+                    <span className="truncate text-[11.5px] text-zinc-400">
+                      {peerTyping[activePeerObj.username] ? (
+                        <span className="font-medium text-sky-400">
+                          печатает...
+                        </span>
+                      ) : activePeerObj.is_online ? (
+                        <span className="font-medium text-emerald-400">
+                          в сети
+                        </span>
+                      ) : (
+                        "был(а) недавно"
                       )}
-                    />
-                  )}
+                    </span>
+                  </div>
                 </div>
 
-                <div className="flex min-w-0 flex-col">
-                  <span className="truncate text-[14px] font-semibold leading-tight">
-                    {activePeerObj.display_name}
-                  </span>
-                  <span className="truncate text-[11.5px] text-zinc-400">
-                    {peerTyping[activePeerObj.username] ? (
-                      <span className="font-medium text-sky-400">
-                        печатает...
-                      </span>
-                    ) : activePeerObj.is_online ? (
-                      <span className="font-medium text-emerald-400">
-                        в сети
-                      </span>
-                    ) : (
-                      "был(а) недавно"
+                {/* Правый блок иконок шапки чата: Звонок, Поиск (лупа) и 3 вертикальные точки */}
+                <div className="flex shrink-0 items-center gap-0.5 pr-1">
+                  <button
+                    type="button"
+                    aria-label="Позвонить"
+                    className={cn(
+                      "flex h-8 w-8 items-center justify-center rounded-full transition-colors cursor-pointer",
+                      isDark
+                        ? "text-zinc-400 hover:bg-white/[0.06] hover:text-zinc-100"
+                        : "text-zinc-500 hover:bg-zinc-100 hover:text-zinc-900"
                     )}
-                  </span>
+                  >
+                    <Phone className="h-4 w-4" />
+                  </button>
+                  <button
+                    type="button"
+                    aria-label="Поиск в чате"
+                    className={cn(
+                      "flex h-8 w-8 items-center justify-center rounded-full transition-colors cursor-pointer",
+                      isDark
+                        ? "text-zinc-400 hover:bg-white/[0.06] hover:text-zinc-100"
+                        : "text-zinc-500 hover:bg-zinc-100 hover:text-zinc-900"
+                    )}
+                  >
+                    <Search className="h-4 w-4" />
+                  </button>
+                  <button
+                    type="button"
+                    aria-label="Меню чата"
+                    className={cn(
+                      "flex h-8 w-8 items-center justify-center rounded-full transition-colors cursor-pointer",
+                      isDark
+                        ? "text-zinc-400 hover:bg-white/[0.06] hover:text-zinc-100"
+                        : "text-zinc-500 hover:bg-zinc-100 hover:text-zinc-900"
+                    )}
+                  >
+                    <MoreVertical className="h-4 w-4" />
+                  </button>
                 </div>
               </div>
             </header>
 
-            {/* Полновысотная область скролла (скроллбар у правого края экрана, а сама лента сообщений — в центральной колонке 700px как в ТГ Web) */}
+            {/* Полновысотная область скролла (скроллбар у правого края экрана, а сама лента сообщений — строго той же ширины 668px, что шапка и инпут) */}
             <div
               ref={messagesContainerRef}
               onScroll={handleMessagesScroll}
               className={cn(
-                "relative z-10 h-full w-full",
+                "relative z-10 h-full w-full px-4",
                 messages.length === 0 ? "overflow-hidden" : "overflow-y-auto"
               )}
             >
-              <div className="mx-auto flex min-h-full w-full max-w-[700px] flex-col justify-end px-4 pt-20">
+              <div className="mx-auto flex min-h-full w-full max-w-[668px] flex-col justify-end pt-20">
               {messages.map((m, idx) => {
                 const isMine = m.sender_username === activeUsername;
                 const prevMsg = idx > 0 ? messages[idx - 1] : undefined;
@@ -1624,7 +1671,7 @@ export const MessengerWorkspace: React.FC<MessengerWorkspaceProps> = ({
               )}
             </AnimatePresence>
 
-            {/* Плавающая нижняя капсула ввода + плашка Ответа (Reply) или Редактирования (Edit) */}
+            {/* Плавающая нижняя капсула ввода (строго одной ширины с сообщениями и шапкой: 668px) */}
             <footer className="pointer-events-none absolute inset-x-0 bottom-5 z-20 px-4">
               <div className="mx-auto flex w-full max-w-[668px] flex-col items-center">
                 <AnimatePresence>
@@ -1640,7 +1687,7 @@ export const MessengerWorkspace: React.FC<MessengerWorkspaceProps> = ({
                         damping: 28,
                       }}
                       className={cn(
-                        "pointer-events-auto mb-2 flex w-[612px] max-w-full items-center justify-between gap-3 rounded-2xl border px-4 py-2 shadow-lg backdrop-blur-xl",
+                        "pointer-events-auto mb-2 flex w-full items-center justify-between gap-3 rounded-2xl border px-4 py-2 shadow-lg backdrop-blur-xl",
                         isDark
                           ? "border-zinc-800/90 bg-[#17171f]/95 text-zinc-100"
                           : "border-zinc-200/90 bg-white/95 text-zinc-900"
@@ -1700,22 +1747,9 @@ export const MessengerWorkspace: React.FC<MessengerWorkspaceProps> = ({
                   onSubmit={handleSendMessage}
                   className="pointer-events-auto flex w-full items-center justify-center"
                 >
-                  <motion.div
-                    layout
-                    initial={false}
-                    animate={{
-                      width: messageInput.trim().length > 0 ? 668 : 612,
-                      paddingRight: messageInput.trim().length > 0 ? 6 : 20,
-                    }}
-                    transition={{
-                      type: "spring",
-                      stiffness: 380,
-                      damping: 26,
-                      mass: 0.72,
-                    }}
-                    style={{ originX: 0 }}
+                  <div
                     className={cn(
-                      "relative flex h-11 max-w-full items-center overflow-hidden rounded-full border pl-5 shadow-lg backdrop-blur-xl",
+                      "relative flex h-11 w-full items-center overflow-hidden rounded-full border pr-1.5 pl-5 shadow-lg backdrop-blur-xl",
                       isDark
                         ? "border-zinc-800/90 bg-[#17171f]/92"
                         : "border-zinc-200/90 bg-white/95"
@@ -1736,51 +1770,55 @@ export const MessengerWorkspace: React.FC<MessengerWorkspaceProps> = ({
                       )}
                     />
 
-                  <AnimatePresence initial={false}>
-                    {messageInput.trim().length > 0 && (
-                      <motion.button
-                        key="liquid-send-btn"
-                        type="submit"
-                        aria-label="Отправить сообщение"
-                        initial={{
-                          width: 0,
-                          opacity: 0,
-                          scale: 0.15,
-                          x: 18,
-                          marginLeft: 0,
-                          filter: "blur(5px)",
-                        }}
-                        animate={{
-                          width: 32,
-                          opacity: 1,
-                          scale: 1,
-                          x: 0,
-                          marginLeft: 8,
-                          filter: "blur(0px)",
-                        }}
-                        exit={{
-                          width: 0,
-                          opacity: 0,
-                          scale: 0.15,
-                          x: 16,
-                          marginLeft: 0,
-                          filter: "blur(5px)",
-                        }}
-                        transition={{
-                          type: "spring",
-                          stiffness: 430,
-                          damping: 24,
-                          mass: 0.62,
-                        }}
-                        whileTap={{ scale: 0.9 }}
-                        className="flex h-8 shrink-0 items-center justify-center overflow-hidden rounded-full bg-sky-500 text-white shadow-md hover:bg-sky-400 cursor-pointer"
-                      >
-                        <OrigamiPaperPlaneIcon />
-                      </motion.button>
-                    )}
-                  </AnimatePresence>
-                </motion.div>
-              </form>
+                    <div className="ml-2 flex h-8 w-8 shrink-0 items-center justify-center">
+                      <AnimatePresence mode="wait" initial={false}>
+                        {messageInput.trim().length > 0 ? (
+                          <motion.button
+                            key="origami-send-btn"
+                            type="submit"
+                            aria-label="Отправить сообщение"
+                            initial={{ opacity: 0, scale: 0.45, rotate: -15 }}
+                            animate={{ opacity: 1, scale: 1, rotate: 0 }}
+                            exit={{ opacity: 0, scale: 0.45, rotate: 15 }}
+                            transition={{
+                              type: "spring",
+                              stiffness: 460,
+                              damping: 24,
+                              mass: 0.55,
+                            }}
+                            whileTap={{ scale: 0.9 }}
+                            className="flex h-8 w-8 items-center justify-center overflow-hidden rounded-full bg-sky-500 text-white shadow-md hover:bg-sky-400 cursor-pointer"
+                          >
+                            <OrigamiPaperPlaneIcon />
+                          </motion.button>
+                        ) : (
+                          <motion.button
+                            key="voice-mic-btn"
+                            type="button"
+                            aria-label="Записать голосовое сообщение"
+                            initial={{ opacity: 0, scale: 0.5 }}
+                            animate={{ opacity: 1, scale: 1 }}
+                            exit={{ opacity: 0, scale: 0.5 }}
+                            transition={{
+                              type: "spring",
+                              stiffness: 440,
+                              damping: 26,
+                              mass: 0.55,
+                            }}
+                            className={cn(
+                              "flex h-8 w-8 items-center justify-center rounded-full transition-colors cursor-pointer",
+                              isDark
+                                ? "bg-zinc-800/80 text-zinc-400 hover:bg-zinc-700/80 hover:text-zinc-200"
+                                : "bg-zinc-100 text-zinc-500 hover:bg-zinc-200 hover:text-zinc-800"
+                            )}
+                          >
+                            <Mic className="h-4 w-4" />
+                          </motion.button>
+                        )}
+                      </AnimatePresence>
+                    </div>
+                  </div>
+                </form>
             </div>
           </footer>
           </>
