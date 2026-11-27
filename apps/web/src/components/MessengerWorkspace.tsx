@@ -1155,14 +1155,26 @@ export const MessengerWorkspace: React.FC<MessengerWorkspaceProps> = ({
           </div>
         ) : (
           <>
+            {/* Размывающий слой (backdrop-blur) в верхнем зазоре от края страницы до шапки: сообщения видны над шапкой, но мягко подмыты */}
+            <div
+              aria-hidden="true"
+              style={{
+                maskImage:
+                  "linear-gradient(to bottom, black 0px, black 28px, rgba(0,0,0,0.6) 52px, transparent 72px)",
+                WebkitMaskImage:
+                  "linear-gradient(to bottom, black 0px, black 28px, rgba(0,0,0,0.6) 52px, transparent 72px)",
+              }}
+              className="pointer-events-none absolute inset-x-0 top-0 z-20 h-[72px] backdrop-blur-md"
+            />
+
             {/* Верхняя плавающая капсула собеседника в ширину центральной колонки чата (как в Telegram Web на ПК) */}
-            <header className="pointer-events-none absolute inset-x-0 top-3 z-20 flex items-center justify-center px-4">
+            <header className="pointer-events-none absolute inset-x-0 top-3 z-30 flex items-center justify-center px-4">
               <div
                 className={cn(
-                  "pointer-events-auto flex w-full max-w-[668px] items-center justify-between gap-3 rounded-full border px-3 py-1.5 shadow-xl backdrop-blur-2xl",
+                  "pointer-events-auto flex w-full max-w-[668px] items-center justify-between gap-3 rounded-full border px-3 py-1.5 shadow-xl backdrop-blur-xl",
                   isDark
-                    ? "border-zinc-800/90 bg-[#17171f]/95"
-                    : "border-zinc-200/90 bg-white/95"
+                    ? "border-zinc-800/85 bg-[#17171f]/82"
+                    : "border-zinc-200/85 bg-white/85"
                 )}
               >
                 <div className="flex min-w-0 flex-1 items-center gap-3">
@@ -1247,16 +1259,10 @@ export const MessengerWorkspace: React.FC<MessengerWorkspaceProps> = ({
               </div>
             </header>
 
-            {/* Полновысотная область скролла с мягкой маской затухания сообщений под верхней шапкой и нижним инпутом */}
+            {/* Полновысотная область скролла (сообщения доходят до самого верха экрана и мягко блюрятся над шапкой) */}
             <div
               ref={messagesContainerRef}
               onScroll={handleMessagesScroll}
-              style={{
-                maskImage:
-                  "linear-gradient(to bottom, transparent 0px, transparent 18px, rgba(0,0,0,0.08) 46px, black 74px, black calc(100% - 68px), rgba(0,0,0,0.08) calc(100% - 46px), transparent calc(100% - 22px), transparent 100%)",
-                WebkitMaskImage:
-                  "linear-gradient(to bottom, transparent 0px, transparent 18px, rgba(0,0,0,0.08) 46px, black 74px, black calc(100% - 68px), rgba(0,0,0,0.08) calc(100% - 46px), transparent calc(100% - 22px), transparent 100%)",
-              }}
               className={cn(
                 "relative z-10 h-full w-full px-4",
                 messages.length === 0 ? "overflow-hidden" : "overflow-y-auto"
